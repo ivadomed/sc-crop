@@ -82,8 +82,11 @@ examples:
                         help="Regularization method (default: from config.yaml, usually 'cls')")
     parser.add_argument("--cls-conf", type=float, default=None, dest="cls_conf",
                         help="Classification confidence threshold for --regularization cls (default: 0.5)")
+    parser.add_argument("--no-onnx", dest="use_onnx", action="store_false",
+                        help="Use PyTorch .pt inference instead of ONNX Runtime (supports --device)")
+    parser.set_defaults(use_onnx=True)
     parser.add_argument("--device", default=None,
-                        help="Inference device: cpu, cuda, mps, or auto-detect if omitted")
+                        help="Inference device: cpu, cuda, mps — only with --no-onnx")
     parser.add_argument("--debug", action="store_true",
                         help="Save <stem>_debug.png: all slices with max-confidence bbox")
     parser.add_argument("--time", action="store_true",
@@ -104,6 +107,7 @@ examples:
         regularization = args.regularization,
         cls_conf       = args.cls_conf,
         device         = args.device,
+        use_onnx       = args.use_onnx,
         debug          = args.debug,
         crop           = args.crop,
         las            = args.las,

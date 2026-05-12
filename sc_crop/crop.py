@@ -14,12 +14,13 @@ Regularization (--regularization):
 
 Usage:
     from sc_crop.crop import run
-    result = run("t2.nii.gz")                              # cls regularization (default)
+    result = run("t2.nii.gz")                              # ONNX + cls regularization (default)
+    result = run("t2.nii.gz", use_onnx=False)             # PyTorch .pt inference
     result = run("t2.nii.gz", regularization="graphtrim")  # graphtrim regularization
     result = run("t2.nii.gz", regularization="none")       # no regularization
     result = run("t2.nii.gz", crop=True)                   # + cropped volume (native)
     result = run("t2.nii.gz", crop=True, las=True)         # + cropped volume (LAS)
-    result = run("t2.nii.gz", device="cuda")               # GPU inference
+    result = run("t2.nii.gz", use_onnx=False, device="cuda")  # GPU inference (.pt only)
 """
 
 from __future__ import annotations
@@ -463,6 +464,7 @@ def run(input_path: str,
         regularization: str | None = None,
         cls_conf: float | None = None,
         device: str | None = None,
+        use_onnx: bool = True,
         debug: bool = False,
         crop: bool = False,
         las: bool = False,
@@ -470,8 +472,10 @@ def run(input_path: str,
         time_steps: bool = False) -> dict:
     """Full pipeline: load → LAS → resample → infer → regularize → bbox 3D → save.
 
+    use_onnx:       True (default) — ONNX Runtime inference (CPU, no ultralytics overhead).
+                    False — PyTorch .pt inference via ultralytics (supports --device cuda/mps).
     regularization: "cls" (default), "graphtrim", or "none".
-    device:         "cpu", "cuda", "mps", or None (ultralytics auto-detect).
+    device:         "cpu", "cuda", "mps" — only used when use_onnx=False.
     """
     import time as _time
 
@@ -481,8 +485,7 @@ def run(input_path: str,
             print(f"  [{label}] {t1 - t0:.2f}s")
         return t1
 
-    from .download import ensure_model, ensure_cls_model
-    from ultralytics import YOLO
+    from .download import ensure_model
 
     t0 = _time.perf_counter()
 
@@ -510,12 +513,20 @@ def run(input_path: str,
     print(f"Input   : {Path(input_path).name}  shape={img.shape}  ornt={original_axcodes}")
     t0 = _tick("load + reorient", t0)
 
-    predict_kw: dict = {"verbose": False}
-    if device:
-        predict_kw["device"] = device
-
-    model    = YOLO(str(model_path))
-    cls_model = YOLO(str(ensure_cls_model(model_path.parent))) if regularization == "cls" else None
+    if use_onnx:
+        from .infer_onnx import load_session, infer_slices_onnx, cls_comp_filter_onnx
+        det_onnx_path = model_path.parent / "model.onnx"
+        cls_onnx_path = model_path.parent / "cls_model.onnx"
+        det_sess = load_session(det_onnx_path)
+        cls_sess = load_session(cls_onnx_path) if regularization == "cls" else None
+    else:
+        from .download import ensure_cls_model
+        from ultralytics import YOLO
+        predict_kw: dict = {"verbose": False}
+        if device:
+            predict_kw["device"] = device
+        det_pt   = YOLO(str(model_path))
+        cls_model = YOLO(str(ensure_cls_model(model_path.parent))) if regularization == "cls" else None
     t0 = _tick("load model", t0)
 
     si_zoom  = zooms[2] / si_res
@@ -526,12 +537,18 @@ def run(input_path: str,
     slices, las_idxs = build_slices(data_inf, channels)
     t0 = _tick("build slices", t0)
 
-    preds = infer_slices(model, slices, las_idxs, conf, device)
+    if use_onnx:
+        preds = infer_slices_onnx(det_sess, slices, las_idxs, conf)
+    else:
+        preds = infer_slices(det_pt, slices, las_idxs, conf, device)
     print(f"Detected: {len(preds)}/{data_inf.shape[2]} slices")
     t0 = _tick("inference", t0)
 
-    if regularization == "cls" and cls_model is not None:
-        preds = cls_comp_filter(preds, slices, las_idxs, cls_model, cls_conf, device)
+    if regularization == "cls":
+        if use_onnx and cls_sess is not None:
+            preds = cls_comp_filter_onnx(preds, slices, las_idxs, cls_sess, cls_conf)
+        elif not use_onnx and cls_model is not None:
+            preds = cls_comp_filter(preds, slices, las_idxs, cls_model, cls_conf, device)
         print(f"Cls reg : {len(preds)} slices kept (conf≥{cls_conf})")
         t0 = _tick("cls regularization", t0)
     elif regularization == "graphtrim":
