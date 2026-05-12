@@ -1,0 +1,4 @@
+si_res: 10.0       # SI resampling resolution (mm) — must match training
+inplane_res: 1.0   # In-plane resampling resolution (mm) — must match training
+channels: 3        # ONNX input channels (1 = grayscale, 3 = superior/current/inferior)
+conf: 0.1          # Default detection confidence threshold
