@@ -25,8 +25,13 @@ pip install git+https://github.com/ivadomed/sc-crop.git
 **_Optional_ — use `sc_crop` without activating the environment each time:**
 
 ```bash
+# conda
 mkdir -p ~/.local/bin
 ln -s $(conda run -n sc_crop which sc_crop) ~/.local/bin/sc_crop
+
+# venv
+mkdir -p ~/.local/bin
+ln -s $(pwd)/venv/bin/sc_crop ~/.local/bin/sc_crop
 ```
 
 Make sure `~/.local/bin` is in your `PATH` (add to `~/.bashrc` or `~/.zshrc` if needed):
