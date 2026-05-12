@@ -78,6 +78,12 @@ examples:
                         help="Padding in Superior-Inferior direction (mm). Single value or 'sup inf'")
     parser.add_argument("--conf", type=float, default=None,
                         help="Detection confidence threshold (default: from config.yaml)")
+    parser.add_argument("--regularization", default=None, choices=["cls", "graphtrim", "none"],
+                        help="Regularization method (default: from config.yaml, usually 'cls')")
+    parser.add_argument("--cls-conf", type=float, default=None, dest="cls_conf",
+                        help="Classification confidence threshold for --regularization cls (default: 0.5)")
+    parser.add_argument("--device", default=None,
+                        help="Inference device: cpu, cuda, mps, or auto-detect if omitted")
     parser.add_argument("--debug", action="store_true",
                         help="Save <stem>_debug.png: all slices with max-confidence bbox")
     parser.add_argument("--time", action="store_true",
@@ -88,18 +94,21 @@ examples:
         parser.error("an input file is required (positional or -i)")
 
     result = run(
-        input_path    = input_path,
-        output_path   = args.output,
-        model_path    = args.model,
-        padding_rl_mm = _parse_padding(args.padding_rl),
-        padding_ap_mm = _parse_padding(args.padding_ap),
-        padding_si_mm = _parse_padding(args.padding_si),
-        conf          = args.conf,
-        debug         = args.debug,
-        crop          = args.crop,
-        las           = args.las,
-        translate     = args.translate,
-        time_steps    = args.time,
+        input_path     = input_path,
+        output_path    = args.output,
+        model_path     = args.model,
+        padding_rl_mm  = _parse_padding(args.padding_rl),
+        padding_ap_mm  = _parse_padding(args.padding_ap),
+        padding_si_mm  = _parse_padding(args.padding_si),
+        conf           = args.conf,
+        regularization = args.regularization,
+        cls_conf       = args.cls_conf,
+        device         = args.device,
+        debug          = args.debug,
+        crop           = args.crop,
+        las            = args.las,
+        translate      = args.translate,
+        time_steps     = args.time,
     )
 
     if "output" in result:

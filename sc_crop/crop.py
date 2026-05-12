@@ -4,12 +4,22 @@ Core logic for spinal cord detection and bounding box computation.
 Default output: <stem>_bbox.txt with inclusive voxel indices in native image space,
 compatible with SCT's ImageCropper.get_bbox_from_minmax(xmin, xmax, ymin, ymax, zmin, zmax).
 
+Regularization (--regularization):
+  cls       (default): runs a classifier on detection components from most superior
+                       to most inferior; stops at first component with ≥1 positive slice;
+                       keeps all detections from that component's min_z downward.
+  graphtrim:           removes superior outlier detections by checking the 2 topmost
+                       SI edges; discards slices above the first broken edge.
+  none:                no regularization, raw detection output.
+
 Usage:
     from sc_crop.crop import run
-    result = run("t2.nii.gz")                          # bbox txt only
-    result = run("t2.nii.gz", crop=True)               # + cropped volume (native)
-    result = run("t2.nii.gz", crop=True, las=True)     # + cropped volume (LAS)
-    result = run("t2.nii.gz", crop=True, translate=True)  # + correct FSLeyes affine
+    result = run("t2.nii.gz")                              # cls regularization (default)
+    result = run("t2.nii.gz", regularization="graphtrim")  # graphtrim regularization
+    result = run("t2.nii.gz", regularization="none")       # no regularization
+    result = run("t2.nii.gz", crop=True)                   # + cropped volume (native)
+    result = run("t2.nii.gz", crop=True, las=True)         # + cropped volume (LAS)
+    result = run("t2.nii.gz", device="cuda")               # GPU inference
 """
 
 from __future__ import annotations
@@ -217,12 +227,16 @@ def build_slices(data: np.ndarray, channels: int) -> tuple[list, list]:
 
 # ─── YOLO inference ───────────────────────────────────────────────────────────
 
-def infer_slices(model, slices: list, las_idxs: list, conf_thresh: float) -> dict:
-    """Run YOLO inference on pre-built slices.
+def infer_slices(model, slices: list, las_idxs: list, conf_thresh: float,
+                 device: str | None = None) -> dict:
+    """Run YOLO detection inference on pre-built slices.
 
     Returns {las_idx: (cx, cy, w, h)} in slice-image normalised coords [0,1].
     """
-    results = model.predict(slices, conf=conf_thresh, verbose=False)
+    kw = {"conf": conf_thresh, "verbose": False}
+    if device:
+        kw["device"] = device
+    results = model.predict(slices, **kw)
     preds   = {}
     for las_idx, res in zip(las_idxs, results):
         if res.boxes is None or len(res.boxes) == 0:
@@ -231,6 +245,90 @@ def infer_slices(model, slices: list, las_idxs: list, conf_thresh: float) -> dic
         cx, cy, w, h = res.boxes.xywhn[best].tolist()
         preds[las_idx] = (cx, cy, w, h)
     return preds
+
+
+# ─── Regularization helpers ───────────────────────────────────────────────────
+
+def _si_connected_components(preds: dict) -> list:
+    """Group consecutive z-indices of preds into components (ascending z = superior first)."""
+    if not preds:
+        return []
+    zs = sorted(preds)
+    comp = [zs[0]]
+    comps: list = []
+    for z in zs[1:]:
+        if z == comp[-1] + 1:
+            comp.append(z)
+        else:
+            comps.append(comp)
+            comp = [z]
+    comps.append(comp)
+    return comps
+
+
+def _sc_class_idx(cls_model) -> int:
+    for idx, name in cls_model.names.items():
+        if name == "sc":
+            return int(idx)
+    raise ValueError(f"Class 'sc' not found in cls model names: {cls_model.names}")
+
+
+def cls_comp_filter(preds: dict, slices: list, las_idxs: list,
+                    cls_model, cls_conf: float, device: str | None) -> dict:
+    """Keep first cls-validated SI component + all preds below it.
+
+    Iterates components from most superior, runs cls in batch per component,
+    stops as soon as one component has ≥1 positive slice (conf ≥ cls_conf).
+    Returns all preds with z ≥ min_z of the validated component.
+    Fallback: returns all preds if no component is validated.
+    """
+    comps = _si_connected_components(preds)
+    sc_idx = _sc_class_idx(cls_model)
+    slice_map = {idx: sl for idx, sl in zip(las_idxs, slices)}
+    predict_kw: dict = {"verbose": False}
+    if device:
+        predict_kw["device"] = device
+
+    for comp in comps:
+        batch = [slice_map[z] for z in comp if z in slice_map]
+        if not batch:
+            continue
+        results = cls_model.predict(batch, **predict_kw)
+        if any(float(r.probs.data[sc_idx]) >= cls_conf for r in results):
+            return {z: b for z, b in preds.items() if z >= min(comp)}
+    return preds
+
+
+def _graphreg_edge_broken(preds: dict, z_i: int, z_j: int,
+                           H: int, W: int,
+                           ap_mm: float, rl_mm: float, si_mm: float) -> bool:
+    hop = z_j - z_i
+    if hop * si_mm >= 40.0:
+        return True
+    cx_i, cy_i, w_i, h_i = preds[z_i]
+    cx_j, cy_j, w_j, h_j = preds[z_j]
+    return (abs((cx_j + w_j / 2) - (cx_i + w_i / 2)) * W * rl_mm > 15.0 * hop or
+            abs((cx_j - w_j / 2) - (cx_i - w_i / 2)) * W * rl_mm > 15.0 * hop or
+            abs((cy_j - h_j / 2) - (cy_i - h_i / 2)) * H * ap_mm > 25.0 * hop or
+            abs((cy_j + h_j / 2) - (cy_i + h_i / 2)) * H * ap_mm > 25.0 * hop)
+
+
+def graphtrim_superior_filter(preds: dict, H: int, W: int,
+                               ap_mm: float, rl_mm: float, si_mm: float) -> dict:
+    """Remove superior outlier detections by checking only the 2 topmost SI edges.
+
+    If the edge between the 1st↔2nd or 2nd↔3rd most superior slice is broken
+    (SI gap ≥ 40mm or face shift exceeds per-hop threshold), slices above the
+    first broken edge are discarded.
+    """
+    if len(preds) <= 2:
+        return preds
+    zs = sorted(preds)
+    cut = 0
+    for i in range(min(2, len(zs) - 1)):
+        if _graphreg_edge_broken(preds, zs[i], zs[i + 1], H, W, ap_mm, rl_mm, si_mm):
+            cut = i + 1
+    return preds if cut == 0 else {z: preds[z] for z in zs[cut:]}
 
 
 # ─── Per-slice → LAS bbox aggregation ─────────────────────────────────────────
@@ -362,19 +460,18 @@ def run(input_path: str,
         padding_ap_mm: float | tuple = 15.0,
         padding_si_mm: float | tuple = 20.0,
         conf: float | None = None,
+        regularization: str | None = None,
+        cls_conf: float | None = None,
+        device: str | None = None,
         debug: bool = False,
         crop: bool = False,
         las: bool = False,
         translate: bool = True,
         time_steps: bool = False) -> dict:
-    """Full pipeline: load → LAS → resample → infer → bbox 3D → save.
+    """Full pipeline: load → LAS → resample → infer → regularize → bbox 3D → save.
 
-    Default output: <stem>_bbox.txt with inclusive voxel indices in native space,
-    compatible with SCT's ImageCropper.get_bbox_from_minmax().
-
-    --crop:         also save the cropped volume (-o sets its path)
-    --las:          output cropped volume in LAS orientation (requires --crop)
-    --no-translate: do not update affine (by default affine is updated for FSLeyes overlay)
+    regularization: "cls" (default), "graphtrim", or "none".
+    device:         "cpu", "cuda", "mps", or None (ultralytics auto-detect).
     """
     import time as _time
 
@@ -384,17 +481,19 @@ def run(input_path: str,
             print(f"  [{label}] {t1 - t0:.2f}s")
         return t1
 
-    from .download import ensure_model
+    from .download import ensure_model, ensure_cls_model
     from ultralytics import YOLO
 
     t0 = _time.perf_counter()
 
     model_path = Path(model_path) if model_path else ensure_model()
     config     = config if config is not None else load_config(model_path.parent)
-    si_res      = config["si_res"]
-    inplane_res = config.get("inplane_res")
-    channels    = config.get("channels", 3)
-    conf        = conf if conf is not None else config.get("conf", 0.1)
+    si_res        = config["si_res"]
+    inplane_res   = config.get("inplane_res")
+    channels      = config.get("channels", 3)
+    conf          = conf          if conf          is not None else config.get("conf", 0.1)
+    regularization = regularization if regularization is not None else config.get("regularization", "cls")
+    cls_conf      = cls_conf      if cls_conf      is not None else config.get("cls_conf", 0.5)
 
     pad_rl = _as_pair(padding_rl_mm)
     pad_ap = _as_pair(padding_ap_mm)
@@ -411,7 +510,12 @@ def run(input_path: str,
     print(f"Input   : {Path(input_path).name}  shape={img.shape}  ornt={original_axcodes}")
     t0 = _tick("load + reorient", t0)
 
+    predict_kw: dict = {"verbose": False}
+    if device:
+        predict_kw["device"] = device
+
     model    = YOLO(str(model_path))
+    cls_model = YOLO(str(ensure_cls_model(model_path.parent))) if regularization == "cls" else None
     t0 = _tick("load model", t0)
 
     si_zoom  = zooms[2] / si_res
@@ -422,9 +526,21 @@ def run(input_path: str,
     slices, las_idxs = build_slices(data_inf, channels)
     t0 = _tick("build slices", t0)
 
-    preds = infer_slices(model, slices, las_idxs, conf)
+    preds = infer_slices(model, slices, las_idxs, conf, device)
     print(f"Detected: {len(preds)}/{data_inf.shape[2]} slices")
     t0 = _tick("inference", t0)
+
+    if regularization == "cls" and cls_model is not None:
+        preds = cls_comp_filter(preds, slices, las_idxs, cls_model, cls_conf, device)
+        print(f"Cls reg : {len(preds)} slices kept (conf≥{cls_conf})")
+        t0 = _tick("cls regularization", t0)
+    elif regularization == "graphtrim":
+        inf_zooms = tuple(float(v) for v in img_inf.header.get_zooms()[:3])
+        H_inf, W_inf = data_inf.shape[1], data_inf.shape[0]
+        preds = graphtrim_superior_filter(preds, H_inf, W_inf,
+                                          inf_zooms[1], inf_zooms[0], inf_zooms[2])
+        print(f"Graphtrim: {len(preds)} slices kept")
+        t0 = _tick("graphtrim regularization", t0)
 
     if not preds:
         raise RuntimeError("No spinal cord detected — check the volume or lower --conf")
