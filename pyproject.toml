@@ -10,6 +10,7 @@ requires-python = ">=3.8"
 dependencies = [
     "nibabel==5.3.3",
     "numpy==2.0.2",
+    "onnxruntime>=1.18.0",
     "pillow==11.3.0",
     "pyyaml==6.0.2",
     "ultralytics==8.4.33",
