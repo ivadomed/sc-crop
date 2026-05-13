@@ -519,6 +519,9 @@ def run(input_path: str,
         cls_onnx_path = model_path.parent / "cls_model.onnx"
         det_sess = load_session(det_onnx_path)
         cls_sess = load_session(cls_onnx_path) if regularization == "cls" else None
+        if debug:
+            from ultralytics import YOLO
+            det_pt = YOLO(str(model_path))
     else:
         from .download import ensure_cls_model
         from ultralytics import YOLO
@@ -559,6 +562,17 @@ def run(input_path: str,
         print(f"Graphtrim: {len(preds)} slices kept")
         t0 = _tick("graphtrim regularization", t0)
 
+    if debug:
+        parent, stem = _stem(input_path)
+        bbox_pad_for_debug = None
+        if preds:
+            bbox_for_debug     = aggregate_bbox_3d(preds, shape[0], shape[1], shape[2], si_zoom)
+            bbox_pad_for_debug = bbox_for_debug.pad(pad_rl, pad_ap, pad_si, zooms, shape)
+        save_debug_panel(det_pt, slices, las_idxs, conf,
+                         str(parent / f"{stem}_debug.png"),
+                         padded_bbox=bbox_pad_for_debug, H=shape[1], W=shape[0])
+        t0 = _tick("debug panel", t0)
+
     if not preds:
         raise RuntimeError("No spinal cord detected — check the volume or lower --conf")
 
@@ -566,13 +580,6 @@ def run(input_path: str,
     bbox_pad      = bbox.pad(pad_rl, pad_ap, pad_si, zooms, shape)
     bbox_pad_orig, _ = bbox_pad.reorient(shape, las_ornt, original_ornt)
     t0 = _tick("bbox aggregation", t0)
-
-    if debug:
-        parent, stem = _stem(input_path)
-        save_debug_panel(model, slices, las_idxs, conf,
-                         str(parent / f"{stem}_debug.png"),
-                         padded_bbox=bbox_pad, H=shape[1], W=shape[0])
-        t0 = _tick("debug panel", t0)
 
     parent, stem = _stem(input_path)
     bbox_txt = Path(output_path) if (output_path and not crop) else parent / f"{stem}_bbox.txt"
