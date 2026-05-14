@@ -7,6 +7,7 @@ Usage:
     sc_crop t2.nii.gz --crop --las           # save crop in LAS orientation
     sc_crop t2.nii.gz --crop --translate     # update affine for correct FSLeyes overlay
     sc_crop t2.nii.gz --crop -o output.nii.gz
+    sc_crop t2.nii.gz --norm-scope slice     # per-slice normalisation (default: volume)
     sc_crop t2.nii.gz --debug                # also saves <stem>_debug.png
     sc_crop download                         # download the model
 """
@@ -87,6 +88,10 @@ examples:
     parser.set_defaults(use_onnx=True)
     parser.add_argument("--device", default=None,
                         help="Inference device: cpu, cuda, mps — only with --no-onnx")
+    parser.add_argument("--norm-scope", dest="norm_scope", default="volume",
+                        choices=["volume", "slice"],
+                        help="Normalisation scope: volume (default) computes percentiles once on "
+                             "the full volume; slice computes per-slice independently")
     parser.add_argument("--debug", action="store_true",
                         help="Save <stem>_debug.png: all slices with max-confidence bbox")
     parser.add_argument("--time", action="store_true",
@@ -108,6 +113,7 @@ examples:
         cls_conf       = args.cls_conf,
         device         = args.device,
         use_onnx       = args.use_onnx,
+        norm_scope     = args.norm_scope,
         debug          = args.debug,
         crop           = args.crop,
         las            = args.las,

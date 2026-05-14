@@ -12,12 +12,19 @@ Regularization (--regularization):
                        SI edges; discards slices above the first broken edge.
   none:                no regularization, raw detection output.
 
+Normalisation (--norm-scope):
+  volume (default): percentiles 0.5/99.5 computed once on all non-zero voxels of the
+                    resampled volume, then applied to every slice. Preserves relative
+                    intensity across slices — matches the training pipeline default.
+  slice:            percentiles computed independently per slice (legacy behaviour).
+
 Usage:
     from sc_crop.crop import run
     result = run("t2.nii.gz")                              # ONNX + cls regularization (default)
     result = run("t2.nii.gz", use_onnx=False)             # PyTorch .pt inference
     result = run("t2.nii.gz", regularization="graphtrim")  # graphtrim regularization
     result = run("t2.nii.gz", regularization="none")       # no regularization
+    result = run("t2.nii.gz", norm_scope="slice")          # per-slice normalisation
     result = run("t2.nii.gz", crop=True)                   # + cropped volume (native)
     result = run("t2.nii.gz", crop=True, las=True)         # + cropped volume (LAS)
     result = run("t2.nii.gz", use_onnx=False, device="cuda")  # GPU inference (.pt only)
@@ -177,33 +184,56 @@ def resample_for_inference(img_las: nib.Nifti1Image,
 
 # ─── Slice extraction ─────────────────────────────────────────────────────────
 
-def normalize_to_uint8(arr: np.ndarray) -> np.ndarray:
-    flat = arr.ravel()
-    nz   = flat[flat > 0]
-    if not len(nz):
-        return np.zeros_like(arr, dtype=np.uint8)
-    lo, hi = np.percentile(nz, [0.5, 99.5])
+def normalize_to_uint8(arr: np.ndarray,
+                       lo: float | None = None,
+                       hi: float | None = None) -> np.ndarray:
+    """Normalize arr to uint8.
+
+    If lo/hi are None, compute percentiles 0.5/99.5 from non-zero pixels (slice-level).
+    Pass pre-computed lo/hi for volume-level normalisation.
+    """
+    if lo is None or hi is None:
+        nz = arr.ravel()
+        nz = nz[nz > 0]
+        if not len(nz):
+            return np.zeros_like(arr, dtype=np.uint8)
+        lo, hi = np.percentile(nz, [0.5, 99.5])
     if hi <= lo:
         return np.zeros_like(arr, dtype=np.uint8)
     return ((np.clip(arr, lo, hi) - lo) / (hi - lo) * 255).astype(np.uint8)
 
 
-def _get_slice(data: np.ndarray, las_idx: int, black: np.ndarray) -> np.ndarray:
+def _volume_percentiles(data: np.ndarray) -> tuple[float, float]:
+    """Compute percentiles 0.5/99.5 on all non-zero voxels of the volume."""
+    nz = data.ravel()
+    nz = nz[nz > 0]
+    if not len(nz):
+        return 0.0, 0.0
+    lo, hi = np.percentile(nz, [0.5, 99.5])
+    return float(lo), float(hi)
+
+
+def _get_slice(data: np.ndarray, las_idx: int, black: np.ndarray,
+               lo: float | None = None, hi: float | None = None) -> np.ndarray:
     """Extract one axial slice in (AP, RL) uint8, identical to preprocess.py.
 
     Convention: data[:, :, las_idx].T[::-1, ::-1]
       rows = AP (row 0 = Anterior), cols = RL (col 0 = Left).
     Out-of-bounds las_idx returns a black frame.
+    lo/hi: pre-computed volume percentiles; None = compute per-slice.
     """
     Z = data.shape[2]
     if las_idx < 0 or las_idx >= Z:
         return black
-    return normalize_to_uint8(data[:, :, las_idx]).T[::-1, ::-1]
+    return normalize_to_uint8(data[:, :, las_idx], lo, hi).T[::-1, ::-1]
 
 
-def build_slices(data: np.ndarray, channels: int) -> tuple[list, list]:
+def build_slices(data: np.ndarray, channels: int,
+                 norm_scope: str = "volume") -> tuple[list, list]:
     """Build all axial slices Superior→Inferior, matching preprocess.py convention.
 
+    norm_scope: "volume" (default) — percentiles computed once on the full volume.
+                "slice"            — percentiles computed independently per slice.
     3ch: R=Superior neighbour (las_idx+1), G=current, B=Inferior neighbour (las_idx-1).
     Border channels are black (zeros).
 
@@ -211,13 +241,15 @@ def build_slices(data: np.ndarray, channels: int) -> tuple[list, list]:
     """
     RL, AP, Z = data.shape
     black     = np.zeros((AP, RL), dtype=np.uint8)
-    slices, las_idxs = [], []
 
+    lo, hi = _volume_percentiles(data) if norm_scope == "volume" else (None, None)
+
+    slices, las_idxs = [], []
     for las_idx in range(Z - 1, -1, -1):   # Superior → Inferior
-        cur = _get_slice(data, las_idx, black)
+        cur = _get_slice(data, las_idx, black, lo, hi)
         if channels == 3:
-            sup = _get_slice(data, las_idx + 1, black)
-            inf = _get_slice(data, las_idx - 1, black)
+            sup = _get_slice(data, las_idx + 1, black, lo, hi)
+            inf = _get_slice(data, las_idx - 1, black, lo, hi)
             slices.append(np.stack([sup, cur, inf], axis=2))
         else:
             slices.append(cur)
@@ -465,6 +497,7 @@ def run(input_path: str,
         cls_conf: float | None = None,
         device: str | None = None,
         use_onnx: bool = True,
+        norm_scope: str = "volume",
         debug: bool = False,
         crop: bool = False,
         las: bool = False,
@@ -475,6 +508,8 @@ def run(input_path: str,
     use_onnx:       True (default) — ONNX Runtime inference (CPU, no ultralytics overhead).
                     False — PyTorch .pt inference via ultralytics (supports --device cuda/mps).
     regularization: "cls" (default), "graphtrim", or "none".
+    norm_scope:     "volume" (default) — percentiles from full volume (matches training pipeline).
+                    "slice" — percentiles per slice independently.
     device:         "cpu", "cuda", "mps" — only used when use_onnx=False.
     """
     import time as _time
@@ -537,7 +572,7 @@ def run(input_path: str,
     data_inf = img_inf.get_fdata(dtype=np.float32)
     t0 = _tick("resample", t0)
 
-    slices, las_idxs = build_slices(data_inf, channels)
+    slices, las_idxs = build_slices(data_inf, channels, norm_scope)
     t0 = _tick("build slices", t0)
 
     if use_onnx:
