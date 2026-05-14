@@ -18,7 +18,7 @@ from pathlib import Path
 # Updated on each release.
 _RELEASE_URL = (
     "https://github.com/ivadomed/sc-crop"
-    "/releases/download/v0.0.2/sc_crop_models_v0.0.2.zip"
+    "/releases/download/v0.0.3/sc_crop_models_v0.0.3.zip"
 )
 
 
