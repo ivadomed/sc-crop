@@ -75,7 +75,7 @@ examples:
                         help="Padding in Right-Left direction (mm). Single value (symmetric) or 'left right' (per face)")
     parser.add_argument("--padding-ap", type=str, default="15.0",
                         help="Padding in Anterior-Posterior direction (mm). Single value (symmetric) or 'anterior posterior' (per face)")
-    parser.add_argument("--padding-si", type=str, default="20.0",
+    parser.add_argument("--padding-si", type=str, default="30 20",
                         help="Padding in Superior-Inferior direction (mm). Single value (symmetric) or 'superior inferior' (per face)")
     parser.add_argument("--conf", type=float, default=None,
                         help="Detection confidence threshold (default: from config.yaml)")

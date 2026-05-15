@@ -68,10 +68,24 @@ Outputs `t2_bbox.txt` next to the input with the inclusive voxel bounding box in
 | `--no-translate` | Do not update affine (by default affine is updated for correct FSLeyes overlay) | off |
 | `--padding-rl MM` | Right-Left padding in mm | 10 |
 | `--padding-ap MM` | Anterior-Posterior padding in mm | 15 |
-| `--padding-si MM` | Superior-Inferior padding in mm | 20 |
+| `--padding-si MM` | Superior-Inferior padding in mm (`'sup inf'` or single value) | `'30 20'` |
 | `--conf FLOAT` | Detection confidence threshold | from config |
+| `--regularization` | Regularization method: `cls`, `graphtrim`, `none` | `cls` |
+| `--no-onnx` | Use PyTorch `.pt` inference instead of ONNX Runtime | off |
+| `--device` | Inference device: `cpu`, `cuda`, `mps` (only with `--no-onnx`) | auto |
 | `--debug` | Save `<stem>_debug.png` (per-slice panel with bbox) | off |
 | `--time` | Print elapsed time per pipeline step | off |
+
+### GPU inference
+
+By default, `sc_crop` uses ONNX Runtime (CPU), which loads ~15× faster than PyTorch and requires no GPU.
+For GPU inference, use PyTorch with `--no-onnx`:
+
+```bash
+sc_crop -i t2.nii.gz --no-onnx --device cuda
+```
+
+> **Note:** `onnxruntime-gpu` is not supported as it conflicts with `onnxruntime` and requires a specific CUDA version. GPU users should use `--no-onnx --device cuda` instead.
 
 ---
 
