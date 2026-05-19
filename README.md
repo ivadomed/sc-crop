@@ -92,7 +92,7 @@ sc_crop -i t2.nii.gz --no-onnx --device cuda
 ## Python API
 
 ```python
-from sc_crop.crop import run
+from sc_crop import run
 
 result = run("t2.nii.gz")                             # bbox txt only
 result = run("t2.nii.gz", crop=True)                  # + cropped volume (native)
@@ -108,7 +108,13 @@ result = run("t2.nii.gz", crop=True, translate=False) # affine NOT updated
 ## Requirements
 
 Python ≥ 3.8. Installed automatically by pip:
-`nibabel`, `numpy`, `pillow`, `pyyaml`, `ultralytics`.
+`nibabel`, `numpy`, `pillow`, `pyyaml`, `onnxruntime`.
+
+`ultralytics` is an optional dependency required only for PyTorch/GPU inference (`--no-onnx`):
+
+```bash
+pip install "sc-crop[yolo]"
+```
 
 ---
 
