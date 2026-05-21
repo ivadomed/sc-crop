@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name        = "sc-crop"
-version     = "0.0.3"
+version     = "0.0.4"
 description = "Spinal cord detection and volume cropping"
 requires-python = ">=3.8"
 dependencies = [
@@ -25,4 +25,4 @@ sc_crop = "sc_crop.cli:main"
 where = ["."]
 
 [tool.setuptools.package-data]
-sc_crop = ["models/*.yaml", "models/*.pt"]
+sc_crop = ["models/*.yaml"]

@@ -46,10 +46,12 @@ from PIL import ImageDraw
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-def load_config(model_dir: str | Path) -> dict:
-    """Load config.yaml from the directory containing model.pt."""
+def load_config() -> dict:
+    """Load config.yaml bundled with the package."""
+    import importlib.resources
     import yaml
-    return yaml.safe_load((Path(model_dir) / "config.yaml").read_text())
+    config_path = importlib.resources.files("sc_crop").joinpath("models/config.yaml")
+    return yaml.safe_load(Path(config_path).read_text())
 
 
 # ─── BBox3D: single source of truth for voxel bboxes in LAS index space ──────
@@ -525,7 +527,7 @@ def run(input_path: str,
     t0 = _time.perf_counter()
 
     model_path = Path(model_path) if model_path else ensure_model()
-    config     = config if config is not None else load_config(model_path.parent)
+    config     = config if config is not None else load_config()
     si_res        = config["si_res"]
     inplane_res   = config.get("inplane_res")
     channels      = config.get("channels", 3)
@@ -550,10 +552,9 @@ def run(input_path: str,
 
     if use_onnx:
         from .infer_onnx import load_session, infer_slices_onnx, cls_comp_filter_onnx
-        det_onnx_path = model_path.parent / "model.onnx"
-        cls_onnx_path = model_path.parent / "cls_model.onnx"
-        det_sess = load_session(det_onnx_path)
-        cls_sess = load_session(cls_onnx_path) if regularization == "cls" else None
+        from .download import ensure_cls_model
+        det_sess = load_session(model_path)
+        cls_sess = load_session(ensure_cls_model()) if regularization == "cls" else None
         if debug:
             from ultralytics import YOLO
             det_pt = YOLO(str(model_path))
@@ -564,7 +565,7 @@ def run(input_path: str,
         if device:
             predict_kw["device"] = device
         det_pt   = YOLO(str(model_path))
-        cls_model = YOLO(str(ensure_cls_model(model_path.parent))) if regularization == "cls" else None
+        cls_model = YOLO(str(ensure_cls_model())) if regularization == "cls" else None
     t0 = _tick("load model", t0)
 
     si_zoom  = zooms[2] / si_res
