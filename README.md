@@ -160,19 +160,35 @@ all options.
 
 ### sc-crop in your inference script
 
+The recommended pattern for inference pipelines is `detect_and_crop` +
+`restore_segmentation`. No intermediate file is written; the segmentation is
+returned in the exact same space as the input image.
+
 ```python
-from sc_crop import run as sc_crop_detect
+import nibabel as nib
+from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
+from sc_crop import detect_and_crop, restore_segmentation
 
-# Detect the SC and get a cropped volume
-result = sc_crop_detect("image.nii.gz", crop=True)
-cropped_path = result["output"]  # use this as input to your segmentation model
+# Step 1 — detect SC and get cropped volume in original orientation
+crop_nii, ctx = detect_and_crop("image.nii.gz")
 
-# Or just get the bounding box indices
-result = sc_crop_detect("image.nii.gz")
-xmin, xmax = result["xmin"], result["xmax"]
-ymin, ymax = result["ymin"], result["ymax"]
-zmin, zmax = result["zmin"], result["zmax"]
+# Step 2 — reorient to RPI (required by nnUNet; skip if your model doesn't need it)
+rpi  = axcodes2ornt(('R', 'P', 'I'))
+orig = io_orientation(crop_nii.affine)
+crop_rpi = crop_nii.as_reoriented(ornt_transform(orig, rpi))
+
+# Step 3 — run your segmentation model → seg_rpi (nib.Nifti1Image, same space as crop_rpi)
+seg_rpi = my_model(crop_rpi)
+
+# Step 4 — reorient segmentation back to original orientation
+seg_crop = seg_rpi.as_reoriented(ornt_transform(rpi, orig))
+
+# Step 5 — restore to full image space (same shape + affine as the input)
+seg_full = restore_segmentation(seg_crop, ctx)
+nib.save(seg_full, "seg.nii.gz")
 ```
+
+A complete minimal template is available in [`examples/infer_with_sc_crop.py`](examples/infer_with_sc_crop.py).
 
 No configuration needed. Models are downloaded automatically on first call and cached in
 `~/.cache/sc_crop/`. SHA256 is verified on every load.

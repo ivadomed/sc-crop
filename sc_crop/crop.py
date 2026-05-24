@@ -4,6 +4,10 @@ Core logic for spinal cord detection and bounding box computation.
 Default output: <stem>_bbox.txt with inclusive voxel indices in native image space,
 compatible with SCT's ImageCropper.get_bbox_from_minmax(xmin, xmax, ymin, ymax, zmin, zmax).
 
+High-level API for inference pipelines:
+    detect_and_crop(img_path)           → (crop_nii, ctx)  — crop in memory + context
+    restore_segmentation(seg_nii, ctx)  → full-space NIfTI — restore after model inference
+
 Regularization (--regularization):
   cls       (default): runs a classifier on detection components from most superior
                        to most inferior; stops at first component with ≥1 positive slice;
@@ -650,3 +654,92 @@ def run(input_path: str,
         result["output"] = str(crop_path)
 
     return result
+
+
+# ─── High-level inference helpers ─────────────────────────────────────────────
+
+def detect_and_crop(img_path, **kwargs) -> tuple:
+    """Detect the spinal cord and return the cropped image in memory.
+
+    This is the recommended entry point for inference pipelines. It avoids
+    writing an intermediate crop file and returns all context needed to restore
+    the segmentation to the full image space afterwards.
+
+    Args:
+        img_path: Path to the input NIfTI image (any orientation, any contrast).
+        **kwargs: Forwarded to run() — padding_rl_mm, padding_ap_mm, padding_si_mm,
+                  conf, cls_conf, regularization, device, use_onnx, norm_scope.
+
+    Returns:
+        (crop_nii, ctx) where:
+            crop_nii — nib.Nifti1Image cropped around the SC (original orientation).
+            ctx      — dict passed to restore_segmentation() to recover full-space output.
+
+    Example::
+
+        from sc_crop import detect_and_crop, restore_segmentation
+        import nibabel as nib
+        from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
+
+        # 1. Detect SC and crop
+        crop_nii, ctx = detect_and_crop("t2.nii.gz")
+
+        # 2. Reorient to RPI for nnUNet (skip if your model doesn't require it)
+        rpi  = axcodes2ornt(('R', 'P', 'I'))
+        orig = io_orientation(crop_nii.affine)
+        crop_rpi = crop_nii.as_reoriented(ornt_transform(orig, rpi))
+
+        # 3. Run your segmentation model → seg_rpi (nib.Nifti1Image, same space as crop_rpi)
+        seg_rpi = my_model(crop_rpi)
+
+        # 4. Reorient segmentation back to original orientation
+        seg_crop = seg_rpi.as_reoriented(ornt_transform(rpi, orig))
+
+        # 5. Restore to full image space
+        seg_full = restore_segmentation(seg_crop, ctx)
+        nib.save(seg_full, "seg.nii.gz")
+    """
+    kwargs.pop("crop", None)  # never write to disk
+    result = run(img_path, crop=False, **kwargs)
+
+    original_img = nib.load(str(img_path))
+    xmin, xmax   = result["xmin"], result["xmax"]
+    ymin, ymax   = result["ymin"], result["ymax"]
+    zmin, zmax   = result["zmin"], result["zmax"]
+
+    data    = original_img.get_fdata(dtype=np.float32)
+    cropped = data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1]
+
+    affine        = original_img.affine.copy()
+    affine[:3, 3] = (original_img.affine @ np.array([xmin, ymin, zmin, 1.0]))[:3]
+    crop_nii      = nib.Nifti1Image(cropped, affine)
+
+    ctx = {**result, "_original_img": original_img}
+    return crop_nii, ctx
+
+
+def restore_segmentation(seg_nii, ctx) -> "nib.Nifti1Image":
+    """Place a segmentation (cropped space) back into the full original image space.
+
+    The segmentation must be in the same orientation as the original image.
+    If your model reoriented the crop (e.g., to RPI), reorient the segmentation
+    back before calling this function (see detect_and_crop() example).
+
+    Args:
+        seg_nii: Binary segmentation NIfTI in cropped space (original orientation).
+        ctx:     Context dict returned by detect_and_crop().
+
+    Returns:
+        nib.Nifti1Image with segmentation padded to the full original image space,
+        using the original affine and header.
+    """
+    original_img = ctx["_original_img"]
+    xmin, xmax   = ctx["xmin"], ctx["xmax"]
+    ymin, ymax   = ctx["ymin"], ctx["ymax"]
+    zmin, zmax   = ctx["zmin"], ctx["zmax"]
+
+    full    = np.zeros(original_img.shape[:3], dtype=np.uint8)
+    seg_arr = np.asarray(seg_nii.dataobj).astype(np.uint8)
+    full[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1] = seg_arr
+
+    return nib.Nifti1Image(full, original_img.affine, original_img.header)
