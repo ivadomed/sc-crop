@@ -30,6 +30,14 @@ _ASSETS = {
         "url": f"{_BASE_URL}/cls_model.onnx",
         "sha256": "1153922fc4c39d19d3d475f0246252d10782aef428b11e1378fc040e4f71b61e",
     },
+    "model.pt": {
+        "url": f"{_BASE_URL}/model.pt",
+        "sha256": "41f09145b8e297511a5d1d95dbb57438a83055e44368b635673d8dd2116bdf42",
+    },
+    "cls_model.pt": {
+        "url": f"{_BASE_URL}/cls_model.pt",
+        "sha256": "2007ff7a59049378015239e6a8c80c463f13a18114ebc153daa89629e65defef",
+    },
 }
 
 _CACHE_DIR = Path.home() / ".cache" / "sc_crop"
@@ -73,8 +81,25 @@ def ensure_cls_model() -> Path:
     return _ensure_file("cls_model.onnx")
 
 
+def ensure_pt_model() -> Path:
+    """Return path to model.pt (for GPU batch inference), downloading if needed."""
+    return _ensure_file("model.pt")
+
+
+def ensure_pt_cls_model() -> Path:
+    """Return path to cls_model.pt, downloading if needed."""
+    return _ensure_file("cls_model.pt")
+
+
 def download() -> None:
-    """Pre-download all model files. Optional — happens automatically on first use."""
-    for name in _ASSETS:
+    """Pre-download ONNX model files (CPU inference). Optional — auto on first use."""
+    for name in ("model.onnx", "cls_model.onnx"):
         _ensure_file(name)
-    print(f"sc_crop models ready in {_CACHE_DIR}")
+    print(f"sc_crop ONNX models ready in {_CACHE_DIR}")
+
+
+def download_pt() -> None:
+    """Pre-download PyTorch model files (GPU batch inference)."""
+    for name in ("model.pt", "cls_model.pt"):
+        _ensure_file(name)
+    print(f"sc_crop PT models ready in {_CACHE_DIR}")

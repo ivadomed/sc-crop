@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name        = "sc-crop"
-version     = "0.0.4"
+version     = "0.0.5"
 description = "Spinal cord detection and volume cropping"
 requires-python = ">=3.8"
 dependencies = [

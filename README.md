@@ -118,6 +118,68 @@ pip install "sc-crop[yolo]"
 
 ---
 
+## Use in your training pipeline
+
+sc-crop is designed to be dropped into any nnUNet training script as a preprocessing step.
+It crops volumes to a tight bbox around the spinal cord before training → fewer voxels,
+faster training, better generalisation.
+
+### Install with GPU support (batch preprocessing)
+
+```bash
+pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git"
+```
+
+`[yolo]` adds `ultralytics` for GPU batch inference. The base install (ONNX, CPU) is
+sufficient for single-image inference at test time.
+
+### Step 3 of your training script
+
+```bash
+# Set to true to use sc-crop detection (realistic pipeline, matches inference)
+# Set to false to use GT-bbox crop (oracle upper bound)
+USE_SC_CROP=true
+
+if [ "${USE_SC_CROP}" = "true" ]; then
+    sc_crop preprocess-nnunet \
+        --input    /path/to/msd_datalists/ \
+        --output   /path/to/nnUNet_raw/ \
+        --taskname MyDatasetCropped \
+        --device   cuda
+else
+    python convert_msd_to_nnunet.py \
+        --input    /path/to/msd_datalists/ \
+        --output   /path/to/nnUNet_raw/ \
+        --taskname MyDatasetCropped
+fi
+```
+
+`preprocess-nnunet` handles GPU batch inference, parallel I/O, padding, reorientation
+to RPI, and writes a valid `dataset.json`. See `sc_crop preprocess-nnunet --help` for
+all options.
+
+### sc-crop in your inference script
+
+```python
+from sc_crop import run as sc_crop_detect
+
+# Detect the SC and get a cropped volume
+result = sc_crop_detect("image.nii.gz", crop=True)
+cropped_path = result["output"]  # use this as input to your segmentation model
+
+# Or just get the bounding box indices
+result = sc_crop_detect("image.nii.gz")
+xmin, xmax = result["xmin"], result["xmax"]
+ymin, ymax = result["ymin"], result["ymax"]
+zmin, zmax = result["zmin"], result["zmax"]
+```
+
+No configuration needed. Models are downloaded automatically on first call and cached in
+`~/.cache/sc_crop/`. SHA256 is verified on every load.
+
+---
+
 ## Training
 
 The model was trained using [ivadomed/model_cropping_sc_contrast-agnostic_yolo](https://github.com/ivadomed/model_cropping_sc_contrast-agnostic_yolo).
+The link between package versions, model versions, and training runs is documented in [VERSIONS.md](VERSIONS.md).

@@ -9,7 +9,8 @@ Usage:
     sc_crop t2.nii.gz --crop -o output.nii.gz
     sc_crop t2.nii.gz --norm-scope slice     # per-slice normalisation (default: volume)
     sc_crop t2.nii.gz --debug                # also saves <stem>_debug.png
-    sc_crop download                         # download the model
+    sc_crop download                         # pre-download ONNX models
+    sc_crop preprocess-nnunet --nnunet-dir /data/nnUNet_raw/Dataset001 --output /data/nnUNet_raw
 """
 
 import argparse
@@ -31,6 +32,11 @@ def _parse_padding(value):
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "download":
         download()
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "preprocess-nnunet":
+        from .nnunet import main as nnunet_main
+        nnunet_main(sys.argv[2:])
         return
 
     parser = argparse.ArgumentParser(
