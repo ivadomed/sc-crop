@@ -63,7 +63,7 @@ sc_crop -i t2.nii.gz -o out.nii.gz --crop
 
 ---
 
-## Python API
+## Python interface
 
 ### Detection and cropping
 
