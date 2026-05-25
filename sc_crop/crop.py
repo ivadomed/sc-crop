@@ -214,12 +214,18 @@ def normalize_to_uint8(arr: np.ndarray,
                        hi: float | None = None) -> np.ndarray:
     """Normalize arr to uint8.
 
-    If lo/hi are None, compute percentiles 0.5/99.5 from non-zero pixels (slice-level).
+    If lo/hi are None, compute percentiles 0.5/99.5 from non-background pixels (slice-level).
     Pass pre-computed lo/hi for volume-level normalisation.
+
+    Background detection:
+      MRI : background = 0            → threshold = 0    (keep arr > 0)
+      CT  : background = air ≈ −1000 HU → threshold = −200 (keep arr > −200)
+    CT is auto-detected when arr.min() < −100 (only Hounsfield units go that negative).
     """
     if lo is None or hi is None:
-        nz = arr.ravel()
-        nz = nz[nz > 0]
+        flat = arr.ravel()
+        threshold = -200 if float(flat.min()) < -100 else 0
+        nz = flat[flat > threshold]
         if not len(nz):
             return np.zeros_like(arr, dtype=np.uint8)
         lo, hi = np.percentile(nz, [0.5, 99.5])
@@ -229,9 +235,15 @@ def normalize_to_uint8(arr: np.ndarray,
 
 
 def _volume_percentiles(data: np.ndarray) -> tuple[float, float]:
-    """Compute percentiles 0.5/99.5 on all non-zero voxels of the volume."""
-    nz = data.ravel()
-    nz = nz[nz > 0]
+    """Compute percentiles 0.5/99.5 on all non-background voxels of the volume.
+
+    CT is auto-detected when data.min() < -100; threshold set to -200 HU to
+    exclude air while keeping fat, water, soft tissue and bone.
+    MRI uses threshold 0 (background = 0).
+    """
+    flat = data.ravel()
+    threshold = -200 if float(flat.min()) < -100 else 0
+    nz = flat[flat > threshold]
     if not len(nz):
         return 0.0, 0.0
     lo, hi = np.percentile(nz, [0.5, 99.5])
