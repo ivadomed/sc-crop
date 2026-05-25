@@ -120,57 +120,46 @@ pip install "sc-crop[yolo]"
 
 ## Use in your training pipeline
 
-Add sc_crop to your existing dataset conversion loop (the step that converts image/label pairs to nnUNet format). It detects the spinal cord bbox and crops both image and label before saving — no GT mask required.
+Add sc_crop to your existing dataset conversion loop. `detect_and_crop` detects the bbox and returns the cropped image in memory along with a context object. Apply the same bbox to the label manually (image and label share the same crop coordinates).
 
 ```python
-from sc_crop import run as sc_crop_run
+from sc_crop import detect_and_crop
 import nibabel as nib, numpy as np
 
-def crop_nifti(img, xmin, xmax, ymin, ymax, zmin, zmax):
-    data = np.asarray(img.dataobj)
-    affine = img.affine.copy()
-    affine[:3, 3] = (img.affine @ [xmin, ymin, zmin, 1.0])[:3]
-    return nib.Nifti1Image(data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], affine, img.header)
+# Inside your existing conversion loop (after reorienting image and label to RPI):
+crop_nii, ctx = detect_and_crop(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+xmin, xmax, ymin, ymax, zmin, zmax = ctx['xmin'], ctx['xmax'], ctx['ymin'], ctx['ymax'], ctx['zmin'], ctx['zmax']
 
-# Inside your existing conversion loop (after reorienting to RPI):
-result = sc_crop_run(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
-xmin, xmax = result['xmin'], result['xmax']
-ymin, ymax = result['ymin'], result['ymax']
-zmin, zmax = result['zmin'], result['zmax']
+# Crop the label with the same bbox
+label_img = nib.load(label_rpi)
+label_data = np.asarray(label_img.dataobj)
+label_affine = label_img.affine.copy()
+label_affine[:3, 3] = (label_img.affine @ [xmin, ymin, zmin, 1.0])[:3]
+crop_label = nib.Nifti1Image(label_data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], label_affine, label_img.header)
 
-nib.save(crop_nifti(nib.load(image_rpi), xmin, xmax, ymin, ymax, zmin, zmax), out_image)
-nib.save(crop_nifti(nib.load(label_rpi), xmin, xmax, ymin, ymax, zmin, zmax), out_label)
+nib.save(crop_nii,   out_image)
+nib.save(crop_label, out_label)
 ```
 
 ---
 
 ## Inference with a model trained with sc_crop
 
-At inference time apply sc_crop with the **same padding as at training time**, run the model on the crop, then paste the segmentation back into the original image space.
+Use `detect_and_crop` + `restore_segmentation` — the segmentation is returned in the exact same space as the original input image.
 
 ```python
-from sc_crop import run as sc_crop_run
-import nibabel as nib, numpy as np
+from sc_crop import detect_and_crop, restore_segmentation
+import nibabel as nib
 
-# 1. Detect bbox and crop
-result = sc_crop_run(image_path, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
-xmin, xmax = result['xmin'], result['xmax']
-ymin, ymax = result['ymin'], result['ymax']
-zmin, zmax = result['zmin'], result['zmax']
+# 1. Detect bbox and crop (use same padding as at training time)
+crop_nii, ctx = detect_and_crop(image_path, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
 
-original = nib.load(image_path)
-data = np.asarray(original.dataobj)
-affine = original.affine.copy()
-affine[:3, 3] = (original.affine @ [xmin, ymin, zmin, 1.0])[:3]
-crop = nib.Nifti1Image(data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], affine)
-
-# 2. Run your segmentation model on the crop → seg_crop (nib.Nifti1Image)
-seg_crop = my_model(crop)
+# 2. Run your segmentation model on the crop → seg_crop (nib.Nifti1Image, same space as crop_nii)
+seg_crop = my_model(crop_nii)
 
 # 3. Restore segmentation to the full original image space
-full = np.zeros(original.shape[:3], dtype=np.uint8)
-full[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1] = np.asarray(seg_crop.dataobj).astype(np.uint8)
-nib.save(nib.Nifti1Image(full, original.affine, original.header), out_path)
+seg_full = restore_segmentation(seg_crop, ctx)
+nib.save(seg_full, out_path)
 ```
 
 ---
