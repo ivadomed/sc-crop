@@ -8,13 +8,20 @@ Detects the spinal cord on any MRI volume and outputs a tight 3D bounding box. W
 
 ## Install
 
+Install into any Python environment (≥ 3.8):
+
 ```bash
-conda create -n sc_crop python=3.12
-conda activate sc_crop
 pip install git+https://github.com/ivadomed/sc-crop.git
 ```
 
-GPU/batch preprocessing (adds `ultralytics`):
+Or into a new dedicated environment:
+
+```bash
+conda create -n sc_crop python=3.12 && conda activate sc_crop
+pip install git+https://github.com/ivadomed/sc-crop.git
+```
+
+GPU/batch preprocessing only — adds `ultralytics`:
 
 ```bash
 pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git"
