@@ -678,12 +678,12 @@ def run(input_path: str,
 
 # ─── High-level inference helpers ─────────────────────────────────────────────
 
-def detect_and_crop(img_path, **kwargs) -> tuple:
-    """Detect the spinal cord and return the cropped image in memory.
+def detect(img_path, **kwargs) -> dict:
+    """Detect the spinal cord bounding box and return a context dict.
 
-    This is the recommended entry point for inference pipelines. It avoids
-    writing an intermediate crop file and returns all context needed to restore
-    the segmentation to the full image space afterwards.
+    This is the entry point for pipelines that need to crop multiple volumes
+    (e.g. image + label) with the same bbox. Call detect() once, then pass the
+    returned context to crop() for each volume.
 
     Args:
         img_path: Path to the input NIfTI image (any orientation, any contrast).
@@ -691,71 +691,46 @@ def detect_and_crop(img_path, **kwargs) -> tuple:
                   conf, cls_conf, regularization, device, use_onnx, norm_scope.
 
     Returns:
-        (crop_nii, ctx) where:
-            crop_nii — nib.Nifti1Image cropped around the SC (original orientation).
-            ctx      — dict passed to restore_segmentation() to recover full-space output.
+        ctx dict containing bbox coordinates and original image, to be passed to
+        crop() and restore_segmentation().
 
     Example::
 
-        from sc_crop import detect_and_crop, restore_segmentation
+        from sc_crop import detect, crop, restore_segmentation
         import nibabel as nib
-        from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
 
-        # 1. Detect SC and crop
-        crop_nii, ctx = detect_and_crop("t2.nii.gz")
+        ctx        = detect("t2.nii.gz", padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+        crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
+        crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
 
-        # 2. Reorient to RPI for nnUNet (skip if your model doesn't require it)
-        rpi  = axcodes2ornt(('R', 'P', 'I'))
-        orig = io_orientation(crop_nii.affine)
-        crop_rpi = crop_nii.as_reoriented(ornt_transform(orig, rpi))
-
-        # 3. Run your segmentation model → seg_rpi (nib.Nifti1Image, same space as crop_rpi)
-        seg_rpi = my_model(crop_rpi)
-
-        # 4. Reorient segmentation back to original orientation
-        seg_crop = seg_rpi.as_reoriented(ornt_transform(rpi, orig))
-
-        # 5. Restore to full image space
-        seg_full = restore_segmentation(seg_crop, ctx)
-        nib.save(seg_full, "seg.nii.gz")
+        seg_full = restore_segmentation(my_model(crop_img), ctx)
     """
-    kwargs.pop("crop", None)  # never write to disk
+    kwargs.pop("crop", None)
     result = run(img_path, crop=False, **kwargs)
-
-    original_img = nib.load(str(img_path))
-    xmin, xmax   = result["xmin"], result["xmax"]
-    ymin, ymax   = result["ymin"], result["ymax"]
-    zmin, zmax   = result["zmin"], result["zmax"]
-
-    data    = original_img.get_fdata(dtype=np.float32)
-    cropped = data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1]
-
-    affine        = original_img.affine.copy()
-    affine[:3, 3] = (original_img.affine @ np.array([xmin, ymin, zmin, 1.0]))[:3]
-    crop_nii      = nib.Nifti1Image(cropped, affine)
-
-    ctx = {**result, "_original_img": original_img}
-    return crop_nii, ctx
+    return {**result, "_original_img": nib.load(str(img_path))}
 
 
-def crop_nifti(img: "nib.Nifti1Image", ctx: dict) -> "nib.Nifti1Image":
-    """Crop a NIfTI image to the bbox stored in a detect_and_crop() context.
+def crop(img: "nib.Nifti1Image", ctx: dict) -> "nib.Nifti1Image":
+    """Crop a NIfTI image to the bbox detected by detect().
 
-    Use this to crop a label with the same bbox as its paired image.
+    Works for any volume in the same space as the image passed to detect() —
+    use it for both the image and its label(s).
 
     Args:
-        img: NIfTI image to crop (must be in the same space as the image passed to detect_and_crop).
-        ctx: Context dict returned by detect_and_crop().
+        img: NIfTI image to crop.
+        ctx: Context dict returned by detect() or detect_and_crop().
 
     Returns:
         nib.Nifti1Image cropped to the detected bbox, with updated affine.
 
     Example::
 
-        crop_img, ctx = detect_and_crop("t2.nii.gz", padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
-        crop_label    = crop_nifti(nib.load("t2_label.nii.gz"), ctx)
-        nib.save(crop_img,   "t2_crop.nii.gz")
-        nib.save(crop_label, "t2_label_crop.nii.gz")
+        from sc_crop import detect, crop
+        import nibabel as nib
+
+        ctx        = detect("t2.nii.gz", padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+        crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
+        crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
     """
     xmin, xmax = ctx["xmin"], ctx["xmax"]
     ymin, ymax = ctx["ymin"], ctx["ymax"]
@@ -765,6 +740,29 @@ def crop_nifti(img: "nib.Nifti1Image", ctx: dict) -> "nib.Nifti1Image":
     affine = img.affine.copy()
     affine[:3, 3] = (img.affine @ np.array([xmin, ymin, zmin, 1.0]))[:3]
     return nib.Nifti1Image(data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], affine, img.header)
+
+
+# backward-compatible alias
+crop_nifti = crop
+
+
+def detect_and_crop(img_path, **kwargs) -> tuple:
+    """Convenience wrapper: detect + crop the image in one call.
+
+    Equivalent to::
+
+        ctx = detect(img_path, **kwargs)
+        return crop(nib.load(img_path), ctx), ctx
+
+    Use detect() + crop() directly when you need to crop multiple volumes
+    (image + label) with the same bbox.
+
+    Returns:
+        (crop_nii, ctx) where crop_nii is the cropped image and ctx is passed
+        to crop() or restore_segmentation().
+    """
+    ctx = detect(img_path, **kwargs)
+    return crop(nib.load(str(img_path)), ctx), ctx
 
 
 def restore_segmentation(seg_nii, ctx) -> "nib.Nifti1Image":

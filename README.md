@@ -120,15 +120,16 @@ pip install "sc-crop[yolo]"
 
 ## Use in your training pipeline
 
-Add sc_crop to your existing dataset conversion loop. `detect_and_crop` crops the image and returns a context with the bbox coordinates. Pass that context to `crop_nifti` to apply the same bbox to the label.
+Add sc_crop to your existing dataset conversion loop. `detect()` runs the detection once and returns a context with the bbox coordinates. `crop()` applies that bbox to any volume — use it for both the image and the label.
 
 ```python
-from sc_crop import detect_and_crop, crop_nifti
+from sc_crop import detect, crop
 import nibabel as nib
 
 # Inside your existing conversion loop (after reorienting image and label to RPI):
-crop_img, ctx = detect_and_crop(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
-crop_label    = crop_nifti(nib.load(label_rpi), ctx)
+ctx        = detect(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+crop_img   = crop(nib.load(image_rpi), ctx)
+crop_label = crop(nib.load(label_rpi), ctx)
 
 nib.save(crop_img,   out_image)
 nib.save(crop_label, out_label)
@@ -138,19 +139,17 @@ nib.save(crop_label, out_label)
 
 ## Inference with a model trained with sc_crop
 
-Use `detect_and_crop` + `restore_segmentation` — the segmentation is returned in the exact same space as the original input image.
+Use `detect()` + `crop()` + `restore_segmentation()` — the segmentation is returned in the exact same space as the original input image.
 
 ```python
-from sc_crop import detect_and_crop, restore_segmentation
+from sc_crop import detect, crop, restore_segmentation
 import nibabel as nib
 
-# 1. Detect bbox and crop (use same padding as at training time)
-crop_nii, ctx = detect_and_crop(image_path, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+ctx      = detect(image_path, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+crop_img = crop(nib.load(image_path), ctx)
 
-# 2. Run your segmentation model on the crop → seg_crop (nib.Nifti1Image, same space as crop_nii)
-seg_crop = my_model(crop_nii)
+seg_crop = my_model(crop_img)  # nib.Nifti1Image in cropped space
 
-# 3. Restore segmentation to the full original image space
 seg_full = restore_segmentation(seg_crop, ctx)
 nib.save(seg_full, out_path)
 ```
