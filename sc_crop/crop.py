@@ -63,9 +63,28 @@ def load_config() -> dict:
 Pair = tuple[float, float]
 
 
-def _as_pair(p: float | tuple) -> Pair:
-    """Normalize float or (a, b) → (a, b)."""
-    return (float(p), float(p)) if isinstance(p, (int, float)) else (float(p[0]), float(p[1]))
+def _as_pair(p, default: float = 0.0) -> Pair:
+    """Normalize to (a, b). 'default' sentinel keeps that face's axis default value.
+
+    Accepted forms:
+        10.0                      → (10.0, 10.0)
+        (30, 20)                  → (30.0, 20.0)
+        ('default', 50)           → (default, 50.0)
+        (30, 'default')           → (30.0, default)
+        '30 20'                   → (30.0, 20.0)          # CLI string
+        'default 50'              → (default, 50.0)       # CLI string
+    """
+    def _resolve(v: object) -> float:
+        return default if (isinstance(v, str) and v.strip().lower() == "default") else float(v)
+
+    if isinstance(p, (int, float)):
+        return (float(p), float(p))
+    if isinstance(p, str):
+        parts = p.split()
+        if len(parts) == 2:
+            return (_resolve(parts[0]), _resolve(parts[1]))
+        return (_resolve(p), _resolve(p))
+    return (_resolve(p[0]), _resolve(p[1]))
 
 
 @dataclass(frozen=True)
@@ -559,9 +578,9 @@ def run(input_path: str,
     regularization = regularization if regularization is not None else config.get("regularization", "cls")
     cls_conf      = cls_conf      if cls_conf      is not None else config.get("cls_conf", 0.5)
 
-    pad_rl = _as_pair(padding_rl_mm)
-    pad_ap = _as_pair(padding_ap_mm)
-    pad_si = _as_pair(padding_si_mm)
+    pad_rl = _as_pair(padding_rl_mm, default=10.0)
+    pad_ap = _as_pair(padding_ap_mm, default=15.0)
+    pad_si = _as_pair(padding_si_mm, default=20.0)
 
     img              = nib.load(input_path)
     original_ornt    = nib.io_orientation(img.affine)

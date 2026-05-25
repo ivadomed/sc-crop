@@ -39,7 +39,8 @@ sc_crop -i t2.nii.gz -o out.nii.gz --crop                      # explicit input/
 sc_crop t2.nii.gz --crop --time                                # print elapsed time per step
 
 # Per-face padding: tuple order is (superior inf), (left right), (anterior posterior)
-sc_crop t2.nii.gz --crop --padding-si '40 50'   # 40mm superior, 50mm inferior
+sc_crop t2.nii.gz --crop --padding-si '40 50'           # 40mm superior, 50mm inferior
+sc_crop t2.nii.gz --crop --padding-si 'default 50'      # keep default superior (30mm), 50mm inferior
 sc_crop t2.nii.gz --crop --padding-rl '5 15' --padding-ap '10 20' --padding-si '40 50'
 
 # GPU inference (requires pip install "sc-crop[yolo]" and sc_crop download)
@@ -60,11 +61,12 @@ from sc_crop import detect, crop, restore_segmentation
 import nibabel as nib
 
 # Detect the spinal cord bbox
-# padding accepts a single value (symmetric) or a per-face tuple:
-#   padding_si_mm = (superior, inferior)
-#   padding_rl_mm = (left, right)
-#   padding_ap_mm = (anterior, posterior)
+# padding accepts a single value (symmetric), a per-face tuple, or "default" to keep a face's default:
+#   padding_si_mm = (superior, inferior)   defaults: (30, 20)
+#   padding_rl_mm = (left, right)          default:  10
+#   padding_ap_mm = (anterior, posterior)  default:  15
 ctx = detect("t2.nii.gz", padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(40, 50))
+ctx = detect("t2.nii.gz", padding_si_mm=("default", 50))  # 30mm superior (default), 50mm inferior
 
 # Apply the bbox to any volume in the same space (image, label, …)
 crop_img   = crop(nib.load("t2.nii.gz"),       ctx)  # nib.Nifti1Image
