@@ -32,34 +32,16 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git"
 ## CLI
 
 ```bash
-sc_crop t2.nii.gz                        # detect only → t2_bbox.txt
-sc_crop t2.nii.gz --crop                 # + cropped volume → t2_crop.nii.gz
-sc_crop t2.nii.gz --crop --las           # cropped volume in LAS orientation
-sc_crop -i t2.nii.gz -o out.nii.gz --crop
+sc_crop t2.nii.gz                                         # detect only → t2_bbox.txt
+sc_crop t2.nii.gz --crop                                  # + cropped volume → t2_crop.nii.gz
+sc_crop t2.nii.gz --crop --las                            # cropped volume in LAS orientation
+sc_crop -i t2.nii.gz -o out.nii.gz --crop                 # explicit input/output
+sc_crop t2.nii.gz --crop --padding-rl 10 --padding-ap 15 --padding-si 30  # custom padding
+sc_crop t2.nii.gz --crop --no-onnx --device cuda          # GPU inference
+sc_crop t2.nii.gz --crop --time                           # print elapsed time per step
 ```
 
-`t2_bbox.txt` contains inclusive voxel indices `xmin xmax ymin ymax zmin zmax` in the native image space.
-
-| Parameter | Description | Default |
-|---|---|---|
-| `-i` / positional | Input NIfTI volume | — |
-| `-o OUTPUT` | Output path | `<stem>_bbox.txt` or `<stem>_crop.nii.gz` |
-| `--crop` | Save cropped volume | off |
-| `--las` | Output crop in LAS orientation (requires `--crop`) | off |
-| `--no-translate` | Do not update affine origin in the crop | off |
-| `--padding-rl MM` | Right-Left padding in mm | 10 |
-| `--padding-ap MM` | Anterior-Posterior padding in mm | 15 |
-| `--padding-si MM` | Superior-Inferior padding in mm (single value or `'sup inf'`) | 20 |
-| `--conf FLOAT` | Detection confidence threshold | from config |
-| `--cls-conf FLOAT` | Classifier confidence threshold | 0.5 |
-| `--regularization` | `cls`, `graphtrim`, or `none` | `cls` |
-| `--no-onnx` | Use PyTorch `.pt` instead of ONNX Runtime | off |
-| `--device` | `cpu`, `cuda`, `mps` — only with `--no-onnx` | auto |
-| `--norm-scope` | `volume` or `slice` normalisation | `volume` |
-| `--debug` | Save `<stem>_debug.png` (per-slice bbox panel) | off |
-| `--time` | Print elapsed time per step | off |
-
-> By default sc_crop uses ONNX Runtime (CPU). For GPU inference use `--no-onnx --device cuda`.
+`t2_bbox.txt` contains inclusive voxel indices `xmin xmax ymin ymax zmin zmax` in the native image space. Run `sc_crop --help` for all options.
 
 ---
 
