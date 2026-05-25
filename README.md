@@ -32,16 +32,21 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git"
 ## CLI
 
 ```bash
-sc_crop t2.nii.gz                                         # detect only → t2_bbox.txt
-sc_crop t2.nii.gz --crop                                  # + cropped volume → t2_crop.nii.gz
-sc_crop t2.nii.gz --crop --las                            # cropped volume in LAS orientation
-sc_crop -i t2.nii.gz -o out.nii.gz --crop                 # explicit input/output
-sc_crop t2.nii.gz --crop --padding-rl 10 --padding-ap 15 --padding-si 30  # custom padding
-sc_crop t2.nii.gz --crop --no-onnx --device cuda          # GPU inference
-sc_crop t2.nii.gz --crop --time                           # print elapsed time per step
+sc_crop t2.nii.gz                                              # detect only → t2_bbox.txt
+sc_crop t2.nii.gz --crop                                       # + cropped volume → t2_crop.nii.gz
+sc_crop t2.nii.gz --crop --las                                 # cropped volume in LAS orientation
+sc_crop -i t2.nii.gz -o out.nii.gz --crop                      # explicit input/output
+sc_crop t2.nii.gz --crop --time                                # print elapsed time per step
+
+# Custom padding — symmetric or per face ('sup inf', 'left right', 'ant post')
+sc_crop t2.nii.gz --crop --padding-rl 10 --padding-ap 15 --padding-si '30 20'
+
+# GPU inference (requires pip install "sc-crop[yolo]" and sc_crop download)
+sc_crop t2.nii.gz --crop --no-onnx --device cuda
 ```
 
-`t2_bbox.txt` contains inclusive voxel indices `xmin xmax ymin ymax zmin zmax` in the native image space. Run `sc_crop --help` for all options.
+Defaults: `--padding-rl 10`, `--padding-ap 15`, `--padding-si '30 20'` (30 sup / 20 inf).
+`t2_bbox.txt` contains inclusive voxel indices `xmin xmax ymin ymax zmin zmax` in native image space. Run `sc_crop --help` for all options.
 
 ---
 
@@ -54,11 +59,12 @@ from sc_crop import detect, crop, restore_segmentation
 import nibabel as nib
 
 # Detect the spinal cord bbox
-ctx = detect("t2.nii.gz", padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=30)
+# padding_si_mm accepts a single value (symmetric) or a (sup, inf) tuple
+ctx = detect("t2.nii.gz", padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 20))
 
 # Apply the bbox to any volume in the same space (image, label, …)
 crop_img   = crop(nib.load("t2.nii.gz"),       ctx)  # nib.Nifti1Image
-crop_label = crop(nib.load("t2_label.nii.gz"), ctx)  # same bbox
+crop_label = crop(nib.load("t2_label.nii.gz"), ctx)  # same bbox, same shape
 
 # ctx keys: xmin, xmax, ymin, ymax, zmin, zmax, bbox_file, original_axcodes
 ```
@@ -106,7 +112,7 @@ from sc_crop import detect, crop
 import nibabel as nib
 
 # After reorienting image and label to RPI:
-ctx        = detect(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=30)
+ctx        = detect(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 20))
 crop_img   = crop(nib.load(image_rpi), ctx)
 crop_label = crop(nib.load(label_rpi), ctx)
 
@@ -124,7 +130,7 @@ Use the **same padding as at training time**. The segmentation is returned in th
 from sc_crop import detect, crop, restore_segmentation
 import nibabel as nib
 
-ctx      = detect(image_path, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=30)
+ctx      = detect(image_path, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 20))
 crop_img = crop(nib.load(image_path), ctx)
 
 seg_crop = my_model(crop_img)           # nib.Nifti1Image in cropped space
