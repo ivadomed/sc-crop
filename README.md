@@ -143,15 +143,54 @@ Without cropping, the model is trained on full volumes where the spinal cord occ
 - **Faster training** (smaller volumes → more samples per GPU hour)
 - **Faster inference** (the segmentation model runs on fewer voxels)
 
-### Install with GPU support
+### Minimal integration — add sc_crop to an existing conversion script
 
-GPU batch inference is strongly recommended for preprocessing large datasets (thousands of volumes). Install `ultralytics`:
+If you already have a script that converts your dataset to nnUNet format (iterating over image/label pairs), adding sc_crop is a **3-line change**: detect the bbox, crop image and label with it, save the crops.
+
+```python
+from sc_crop import run as sc_crop_run
+import nibabel as nib
+import numpy as np
+
+def crop_nifti(img, xmin, xmax, ymin, ymax, zmin, zmax):
+    data = np.asarray(img.dataobj)
+    cropped = data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1]
+    affine = img.affine.copy()
+    affine[:3, 3] = (img.affine @ np.array([xmin, ymin, zmin, 1.0]))[:3]
+    return nib.Nifti1Image(cropped, affine, img.header)
+
+# In your existing conversion loop:
+for image_path, label_path, out_image, out_label in pairs:
+
+    # ── before sc_crop: reorient to RPI (required by nnUNet) ──────────────────
+    os.system(f"sct_image -i {image_path} -setorient RPI -o {image_rpi}")
+    os.system(f"sct_image -i {label_path} -setorient RPI -o {label_rpi}")
+
+    # ── sc_crop: detect spinal cord bbox (no GT mask needed) ──────────────────
+    result = sc_crop_run(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+    xmin, xmax = result['xmin'], result['xmax']
+    ymin, ymax = result['ymin'], result['ymax']
+    zmin, zmax = result['zmin'], result['zmax']
+
+    # ── crop both image and label with the same bbox ───────────────────────────
+    nib.save(crop_nifti(nib.load(image_rpi), xmin, xmax, ymin, ymax, zmin, zmax), out_image)
+    nib.save(crop_nifti(nib.load(label_rpi), xmin, xmax, ymin, ymax, zmin, zmax), out_label)
+```
+
+This is the approach used to train the [contrast-agnostic spinal cord segmentation model v3.0](https://github.com/sct-pipeline/contrast-agnostic-softseg-spinalcord).
+The only change to the training script was replacing the standard `03_convert_msd_to_nnunet_reorient.py` with a version that inserts the sc_crop detection step between reorientation and saving.
+
+### Install with GPU support (large datasets)
+
+GPU batch inference is strongly recommended when preprocessing thousands of volumes. Install `ultralytics`:
 
 ```bash
 pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git"
 ```
 
-### Preprocessing your dataset
+For single-image preprocessing (per-image loop as above), the default ONNX CPU backend is sufficient — no GPU required.
+
+### Preprocessing your dataset (batch CLI)
 
 `sc_crop` provides a `preprocess-nnunet` command that takes your MSD-format datalists (JSON files with image/label pairs) and outputs a ready-to-use nnUNet raw dataset where every volume has been cropped around the detected spinal cord.
 
@@ -281,33 +320,116 @@ Padding controls how much context around the spinal cord is kept in the cropped 
 
 The contrast-agnostic SC segmentation model (v3.0) was trained with **RL 10 mm · AP 15 mm · SI 30 mm**.
 
-### sc-crop in your inference script
+### Running inference with a model trained with sc_crop
 
-At inference time, use the same padding as at training time to ensure consistency. The recommended pattern uses `detect_and_crop` + `restore_segmentation` — no intermediate file is written and the segmentation is returned in the exact same space as the input.
+At inference time, **use the same padding as at training time**. The pipeline is:
+
+```
+input image  →  sc_crop detection  →  crop  →  segmentation model  →  restore to original space
+```
+
+The segmentation is returned in the exact same space (shape + affine) as the original input image.
+
+#### Option A — PyTorch checkpoint (during development, requires nnunetv2)
 
 ```python
+import tempfile, shutil, glob
 import nibabel as nib
+import numpy as np
+import torch
 from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
-from sc_crop import detect_and_crop, restore_segmentation
+from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
+from sc_crop import run as sc_crop_run
 
-# Step 1 — detect SC bbox and get cropped volume (native orientation)
-crop_nii, ctx = detect_and_crop("image.nii.gz")
+def segment(image_path: str, out_path: str, model_folder: str,
+            pad_rl=10, pad_ap=15, pad_si=30):
 
-# Step 2 — reorient to RPI (required by nnUNet; skip if your model doesn't need it)
-rpi  = axcodes2ornt(('R', 'P', 'I'))
-orig = io_orientation(crop_nii.affine)
-crop_rpi = crop_nii.as_reoriented(ornt_transform(orig, rpi))
+    with tempfile.TemporaryDirectory() as tmp:
+        # 1. Reorient input to RPI (required by nnUNet)
+        img_rpi = f"{tmp}/rpi.nii.gz"
+        shutil.copyfile(image_path, f"{tmp}/orig.nii.gz")
+        os.system(f"sct_image -i {tmp}/orig.nii.gz -setorient RPI -o {img_rpi}")
+        original = nib.load(img_rpi)
 
-# Step 3 — run your segmentation model → seg_rpi (nib.Nifti1Image, same space as crop_rpi)
-seg_rpi = my_model(crop_rpi)
+        # 2. sc_crop: detect spinal cord bbox
+        r = sc_crop_run(img_rpi, padding_rl_mm=pad_rl, padding_ap_mm=pad_ap,
+                        padding_si_mm=(pad_si, pad_si))
+        xmin, xmax, ymin, ymax, zmin, zmax = r['xmin'], r['xmax'], r['ymin'], r['ymax'], r['zmin'], r['zmax']
 
-# Step 4 — reorient segmentation back to original orientation
-seg_crop = seg_rpi.as_reoriented(ornt_transform(rpi, orig))
+        # 3. Crop the image to the detected bbox
+        data = np.asarray(original.dataobj)
+        aff  = original.affine.copy()
+        aff[:3, 3] = (original.affine @ [xmin, ymin, zmin, 1.0])[:3]
+        crop = nib.Nifti1Image(data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], aff)
+        crop_path = f"{tmp}/crop.nii.gz"
+        nib.save(crop, crop_path)
 
-# Step 5 — paste segmentation back into the full original image space
-seg_full = restore_segmentation(seg_crop, ctx)
-nib.save(seg_full, "seg.nii.gz")
+        # 4. nnUNet inference on cropped volume
+        pred_dir = f"{tmp}/pred"
+        os.makedirs(pred_dir)
+        predictor = nnUNetPredictor(use_gaussian=True, use_mirroring=False,
+                                    perform_everything_on_device=False,
+                                    device=torch.device('cpu'))
+        predictor.initialize_from_trained_model_folder(
+            model_folder, use_folds=[0],
+            checkpoint_name='checkpoint_final.pth',
+        )
+        predictor.predict_from_files([[crop_path]], pred_dir,
+                                     save_probabilities=False, overwrite=True)
+        seg_crop = nib.load(glob.glob(f"{pred_dir}/*.nii.gz")[0])
+
+        # 5. Restore segmentation to original (full) image space
+        full = np.zeros(original.shape[:3], dtype=np.uint8)
+        full[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1] = np.asarray(seg_crop.dataobj).astype(np.uint8)
+        nib.save(nib.Nifti1Image(full, original.affine, original.header), out_path)
 ```
+
+#### Option B — ONNX (deployment, CPU-only, no nnunetv2 needed)
+
+ONNX inference is recommended for deployment: it is ~4× faster than PyTorch on CPU and has no dependency on nnunetv2.
+Export your trained nnUNet checkpoint to ONNX once (see your segmentation framework's export script), then:
+
+```python
+import onnxruntime as ort
+import json, numpy as np, nibabel as nib
+from skimage.transform import resize as sk_resize
+from sc_crop import run as sc_crop_run
+
+def segment_onnx(image_path: str, out_path: str, onnx_model: str, plans_json: str,
+                 pad_rl=10, pad_ap=15, pad_si=30):
+
+    plans  = json.load(open(plans_json))
+    target_spacing = plans['configurations']['3d_fullres']['spacing']   # [z, y, x]
+    patch_size     = plans['configurations']['3d_fullres']['patch_size'] # [D, H, W]
+
+    # 1. sc_crop: detect bbox and get cropped volume in RPI
+    r = sc_crop_run(image_path, padding_rl_mm=pad_rl, padding_ap_mm=pad_ap,
+                    padding_si_mm=(pad_si, pad_si))
+    crop = nib.load(r['output'])   # already cropped by sc_crop --crop
+    orig = nib.load(image_path)
+    xmin, xmax, ymin, ymax, zmin, zmax = r['xmin'], r['xmax'], r['ymin'], r['ymax'], r['zmin'], r['zmax']
+
+    # 2. Normalise and resample to training spacing
+    data = crop.get_fdata(dtype=np.float32)
+    data = (data - data.mean()) / (data.std() + 1e-8)
+    zoom = [s / t for s, t in zip(crop.header.get_zooms()[:3], target_spacing[::-1])]
+    data_rs = sk_resize(data, [int(round(s * z)) for s, z in zip(data.shape, zoom)],
+                        order=3, preserve_range=True).astype(np.float32)
+
+    # 3. Sliding-window inference (single patch for simplicity)
+    session = ort.InferenceSession(onnx_model, providers=['CPUExecutionProvider'])
+    patch   = data_rs[np.newaxis, np.newaxis]  # (1, 1, D, H, W)
+    logits  = session.run(None, {session.get_inputs()[0].name: patch})[0]  # (1, C, D, H, W)
+    seg_rs  = (logits[0, 1] > logits[0, 0]).astype(np.uint8)
+
+    # 4. Resample back to crop space and restore to full image space
+    seg_crop = sk_resize(seg_rs, data.shape, order=0, preserve_range=True).astype(np.uint8)
+    full = np.zeros(orig.shape[:3], dtype=np.uint8)
+    full[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1] = seg_crop
+    nib.save(nib.Nifti1Image(full, orig.affine, orig.header), out_path)
+```
+
+> **Note:** the ONNX example above uses a single patch. For volumes larger than the training patch size, implement sliding-window aggregation with Gaussian weighting (see `nnunetv2` source or the contrast-agnostic inference script for a complete implementation).
 
 A complete minimal template is available in [`examples/infer_with_sc_crop.py`](examples/infer_with_sc_crop.py).
 
