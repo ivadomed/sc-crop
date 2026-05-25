@@ -120,56 +120,177 @@ pip install "sc-crop[yolo]"
 
 ## Use in your training pipeline
 
-sc-crop is designed to be dropped into any nnUNet training script as a preprocessing step.
-It crops volumes to a tight bbox around the spinal cord before training → fewer voxels,
-faster training, better generalisation.
+The key idea is **train/test consistency**: at inference time, sc-crop crops the image before the segmentation model sees it. If the model was trained on full volumes, there is a domain shift. Training on sc-crop-cropped volumes removes this shift and yields better results.
 
-### Install with GPU support (batch preprocessing)
+```
+Full volume                   Cropped volume
+┌─────────────────────────┐   ┌──────────────┐
+│  background  background  │   │              │
+│     ┌──────────────┐     │   │  spinal cord │
+│     │  spinal cord │     │──▶│  + padding   │
+│     └──────────────┘     │   │              │
+│  background  background  │   └──────────────┘
+└─────────────────────────┘
+      training (before)            training (after sc-crop)
+                                   = same as inference
+```
+
+### Why crop at training time?
+
+Without cropping, the model is trained on full volumes where the spinal cord occupies a small fraction of voxels. At inference time, sc-crop crops the volume first, exposing the model to a different input distribution (no large background regions). Cropping at training time eliminates this mismatch. In practice, this gives:
+
+- **Better Dice** on cropped volumes (no domain shift)
+- **Faster training** (smaller volumes → more samples per GPU hour)
+- **Faster inference** (the segmentation model runs on fewer voxels)
+
+### Install with GPU support
+
+GPU batch inference is strongly recommended for preprocessing large datasets (thousands of volumes). Install `ultralytics`:
 
 ```bash
 pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git"
 ```
 
-`[yolo]` adds `ultralytics` for GPU batch inference. The base install (ONNX, CPU) is
-sufficient for single-image inference at test time.
+### Preprocessing your dataset
 
-### Step 3 of your training script
+`sc_crop` provides a `preprocess-nnunet` command that takes your MSD-format datalists (JSON files with image/label pairs) and outputs a ready-to-use nnUNet raw dataset where every volume has been cropped around the detected spinal cord.
 
-```bash
-# Set to true to use sc-crop detection (realistic pipeline, matches inference)
-# Set to false to use GT-bbox crop (oracle upper bound)
-USE_SC_CROP=true
+**How it works internally — 3-phase GPU pipeline:**
 
-if [ "${USE_SC_CROP}" = "true" ]; then
-    sc_crop preprocess-nnunet \
-        --input    /path/to/msd_datalists/ \
-        --output   /path/to/nnUNet_raw/ \
-        --taskname MyDatasetCropped \
-        --device   cuda
-else
-    python convert_msd_to_nnunet.py \
-        --input    /path/to/msd_datalists/ \
-        --output   /path/to/nnUNet_raw/ \
-        --taskname MyDatasetCropped
-fi
+```
+Phase 1 (parallel CPU)  →  load all volumes, resample, extract 2D axial slices
+Phase 2 (GPU)           →  pool ALL slices from ALL volumes → single YOLO pass in batches
+                            → maximum GPU utilisation, no per-volume overhead
+Phase 3 (parallel CPU)  →  aggregate per-volume 3D bbox, apply padding, crop image+label, save
 ```
 
-`preprocess-nnunet` handles GPU batch inference, parallel I/O, padding, reorientation
-to RPI, and writes a valid `dataset.json`. See `sc_crop preprocess-nnunet --help` for
-all options.
+This is ~10-30× faster than processing volumes one by one.
+
+**CLI:**
+
+```bash
+sc_crop preprocess-nnunet \
+    --input     /path/to/msd_datalists/ \
+    --output    /path/to/nnUNet_raw/ \
+    --taskname  MyDatasetCropped \
+    --tasknumber 1000 \
+    --device    cuda \
+    --pad-rl    10 \
+    --pad-ap    15 \
+    --pad-superior 30 \
+    --pad-inferior 30
+```
+
+The `--input` folder must contain JSON files in MSD format (one per dataset), each with `"train"`, `"validation"`, and `"test"` keys listing `{"image": ..., "label": ...}` pairs.
+
+The command outputs:
+```
+nnUNet_raw/
+└── Dataset1000_MyDatasetCropped/
+    ├── imagesTr/     # cropped training images
+    ├── labelsTr/     # cropped training labels  (same bbox as image)
+    ├── imagesTs/     # cropped test images
+    ├── labelsTs/     # cropped test labels
+    └── dataset.json  # nnUNet metadata + sc_crop parameters used
+```
+
+All outputs are reoriented to **RPI**, binarized (labels > 0.5), and have orthonormal direction cosines (SVD-corrected) so that SimpleITK/nnUNet never rejects them.
+
+**Resume after a crash:** if the job is interrupted, re-run the same command. Already-cropped volumes are automatically skipped.
+
+**All CLI options:**
+
+```
+--input            Folder of MSD JSON datalists (*_seed50.json)
+--nnunet-dir       Alternatively, an existing nnUNet raw dataset directory
+--output           Output parent directory (nnUNet_raw)
+--taskname         nnUNet dataset name suffix        [default: SCCropped]
+--tasknumber       nnUNet dataset number             [default: 999]
+--device           cuda or cpu                       [default: cuda]
+--batch-size       2D slices per GPU batch           [default: 64]
+--workers          CPU threads for parallel I/O      [default: min(8, cpu_count)]
+--pad-left         Left padding in mm                [default: 20]
+--pad-right        Right padding in mm               [default: 20]
+--pad-anterior     Anterior padding in mm            [default: 30]
+--pad-posterior    Posterior padding in mm           [default: 30]
+--pad-superior     Superior padding in mm            [default: 40]
+--pad-inferior     Inferior padding in mm            [default: 40]
+--conf             YOLO detection confidence         [default: 0.1]
+--cls-conf         Classifier confidence             [default: 0.5]
+--skip-failed      Skip volumes where detection fails (default: raise)
+```
+
+**Python API:**
+
+```python
+from pathlib import Path
+from sc_crop.nnunet import preprocess_dataset
+
+preprocess_dataset(
+    datalist_dir = Path("/path/to/msd_datalists/"),
+    output_dir   = Path("/path/to/nnUNet_raw/"),
+    taskname     = "MyDatasetCropped",
+    tasknumber   = 1000,
+    device       = "cuda",
+    batch_size   = 64,
+    pad_left     = 10.0,   # mm
+    pad_right    = 10.0,
+    pad_anterior = 15.0,
+    pad_posterior= 15.0,
+    pad_superior = 30.0,
+    pad_inferior = 30.0,
+)
+```
+
+### Full training example (nnUNet)
+
+The complete pipeline from raw BIDS datasets to a trained nnUNet model:
+
+```bash
+# 1. Create datalists (JSON with image/label pairs, train/val/test split)
+python 02_create_msd_data.py \
+    --path-data /data/my-dataset \
+    --path-out  /data/datalists/ \
+    --seed 50
+
+# 2. Crop all volumes with sc-crop and write nnUNet raw dataset
+sc_crop preprocess-nnunet \
+    --input      /data/datalists/ \
+    --output     /data/nnUNet_raw/ \
+    --taskname   MyDatasetCropped \
+    --tasknumber 1000 \
+    --device     cuda \
+    --pad-rl 10 --pad-ap 15 --pad-superior 30 --pad-inferior 30
+
+# 3. nnUNet preprocessing (plan + preprocess)
+nnUNetv2_plan_and_preprocess -d 1000 --verify_dataset_integrity -c 3d_fullres
+
+# 4. Train
+CUDA_VISIBLE_DEVICES=0 nnUNetv2_train 1000 3d_fullres 0 -tr nnUNetTrainer -p nnUNetPlans
+```
+
+### Padding recommendations
+
+Padding controls how much context around the spinal cord is kept in the cropped volume. Tighter padding = faster training but less context for the model.
+
+| Use case | RL | AP | SI |
+|---|---|---|---|
+| Tight crop (fast, less context) | 10 mm | 15 mm | 30 mm |
+| Standard crop | 20 mm | 30 mm | 40 mm |
+| Loose crop (more context) | 30 mm | 40 mm | 60 mm |
+
+The contrast-agnostic SC segmentation model (v3.0) was trained with **RL 10 mm · AP 15 mm · SI 30 mm**.
 
 ### sc-crop in your inference script
 
-The recommended pattern for inference pipelines is `detect_and_crop` +
-`restore_segmentation`. No intermediate file is written; the segmentation is
-returned in the exact same space as the input image.
+At inference time, use the same padding as at training time to ensure consistency. The recommended pattern uses `detect_and_crop` + `restore_segmentation` — no intermediate file is written and the segmentation is returned in the exact same space as the input.
 
 ```python
 import nibabel as nib
 from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
 from sc_crop import detect_and_crop, restore_segmentation
 
-# Step 1 — detect SC and get cropped volume in original orientation
+# Step 1 — detect SC bbox and get cropped volume (native orientation)
 crop_nii, ctx = detect_and_crop("image.nii.gz")
 
 # Step 2 — reorient to RPI (required by nnUNet; skip if your model doesn't need it)
@@ -183,15 +304,14 @@ seg_rpi = my_model(crop_rpi)
 # Step 4 — reorient segmentation back to original orientation
 seg_crop = seg_rpi.as_reoriented(ornt_transform(rpi, orig))
 
-# Step 5 — restore to full image space (same shape + affine as the input)
+# Step 5 — paste segmentation back into the full original image space
 seg_full = restore_segmentation(seg_crop, ctx)
 nib.save(seg_full, "seg.nii.gz")
 ```
 
 A complete minimal template is available in [`examples/infer_with_sc_crop.py`](examples/infer_with_sc_crop.py).
 
-No configuration needed. Models are downloaded automatically on first call and cached in
-`~/.cache/sc_crop/`. SHA256 is verified on every load.
+Models are downloaded automatically on first call and cached in `~/.cache/sc_crop/`. SHA256 is verified on every load.
 
 ---
 
