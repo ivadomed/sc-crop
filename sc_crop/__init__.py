@@ -3,6 +3,7 @@ sc-crop — Spinal cord detection and cropping.
 
 Public API:
     detect_and_crop(img_path, ...)         → (crop_nii, ctx)  — crop in memory for inference
+    crop_nifti(img, ctx)                   → cropped NIfTI    — apply same bbox to a label
     restore_segmentation(seg_nii, ctx)     → full-space NIfTI — restore after model inference
     run(input_path, ...)                   → detect SC bbox (+ optional crop file)
     preprocess_dataset(...)                → batch nnUNet preprocessing on GPU
@@ -19,7 +20,7 @@ Version constants:
     MODEL_VERSION     → alias for __model_version__
 """
 
-from .crop import detect_and_crop, load_config, restore_segmentation, run
+from .crop import crop_nifti, detect_and_crop, load_config, restore_segmentation, run
 from .download import (
     download,
     download_pt,

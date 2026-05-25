@@ -120,24 +120,17 @@ pip install "sc-crop[yolo]"
 
 ## Use in your training pipeline
 
-Add sc_crop to your existing dataset conversion loop. `detect_and_crop` detects the bbox and returns the cropped image in memory along with a context object. Apply the same bbox to the label manually (image and label share the same crop coordinates).
+Add sc_crop to your existing dataset conversion loop. `detect_and_crop` crops the image and returns a context with the bbox coordinates. Pass that context to `crop_nifti` to apply the same bbox to the label.
 
 ```python
-from sc_crop import detect_and_crop
-import nibabel as nib, numpy as np
+from sc_crop import detect_and_crop, crop_nifti
+import nibabel as nib
 
 # Inside your existing conversion loop (after reorienting image and label to RPI):
-crop_nii, ctx = detect_and_crop(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
-xmin, xmax, ymin, ymax, zmin, zmax = ctx['xmin'], ctx['xmax'], ctx['ymin'], ctx['ymax'], ctx['zmin'], ctx['zmax']
+crop_img, ctx = detect_and_crop(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+crop_label    = crop_nifti(nib.load(label_rpi), ctx)
 
-# Crop the label with the same bbox
-label_img = nib.load(label_rpi)
-label_data = np.asarray(label_img.dataobj)
-label_affine = label_img.affine.copy()
-label_affine[:3, 3] = (label_img.affine @ [xmin, ymin, zmin, 1.0])[:3]
-crop_label = nib.Nifti1Image(label_data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], label_affine, label_img.header)
-
-nib.save(crop_nii,   out_image)
+nib.save(crop_img,   out_image)
 nib.save(crop_label, out_label)
 ```
 

@@ -738,6 +738,35 @@ def detect_and_crop(img_path, **kwargs) -> tuple:
     return crop_nii, ctx
 
 
+def crop_nifti(img: "nib.Nifti1Image", ctx: dict) -> "nib.Nifti1Image":
+    """Crop a NIfTI image to the bbox stored in a detect_and_crop() context.
+
+    Use this to crop a label with the same bbox as its paired image.
+
+    Args:
+        img: NIfTI image to crop (must be in the same space as the image passed to detect_and_crop).
+        ctx: Context dict returned by detect_and_crop().
+
+    Returns:
+        nib.Nifti1Image cropped to the detected bbox, with updated affine.
+
+    Example::
+
+        crop_img, ctx = detect_and_crop("t2.nii.gz", padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+        crop_label    = crop_nifti(nib.load("t2_label.nii.gz"), ctx)
+        nib.save(crop_img,   "t2_crop.nii.gz")
+        nib.save(crop_label, "t2_label_crop.nii.gz")
+    """
+    xmin, xmax = ctx["xmin"], ctx["xmax"]
+    ymin, ymax = ctx["ymin"], ctx["ymax"]
+    zmin, zmax = ctx["zmin"], ctx["zmax"]
+
+    data   = np.asarray(img.dataobj)
+    affine = img.affine.copy()
+    affine[:3, 3] = (img.affine @ np.array([xmin, ymin, zmin, 1.0]))[:3]
+    return nib.Nifti1Image(data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], affine, img.header)
+
+
 def restore_segmentation(seg_nii, ctx) -> "nib.Nifti1Image":
     """Place a segmentation (cropped space) back into the full original image space.
 
