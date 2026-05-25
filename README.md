@@ -8,126 +8,116 @@ Detects the spinal cord on any MRI volume and outputs a tight 3D bounding box. W
 
 ## Install
 
-**Option A — conda (recommended)**
-
 ```bash
 conda create -n sc_crop python=3.12
 conda activate sc_crop
 pip install git+https://github.com/ivadomed/sc-crop.git
 ```
 
-**Option B — pip**
+GPU/batch preprocessing (adds `ultralytics`):
 
 ```bash
-pip install git+https://github.com/ivadomed/sc-crop.git
-```
-
-**_Optional_ — use `sc_crop` without activating the environment each time:**
-
-```bash
-# conda
-mkdir -p ~/.local/bin
-ln -s $(conda run -n sc_crop which sc_crop) ~/.local/bin/sc_crop
-
-# venv
-mkdir -p ~/.local/bin
-ln -s $(pwd)/venv/bin/sc_crop ~/.local/bin/sc_crop
-```
-
-Make sure `~/.local/bin` is in your `PATH` (add to `~/.bashrc` or `~/.zshrc` if needed):
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
+pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git"
 ```
 
 ---
 
-## Usage
-
-### Download the model (first use only)
+## CLI
 
 ```bash
-sc_crop download
+sc_crop t2.nii.gz                        # detect only → t2_bbox.txt
+sc_crop t2.nii.gz --crop                 # + cropped volume → t2_crop.nii.gz
+sc_crop t2.nii.gz --crop --las           # cropped volume in LAS orientation
+sc_crop -i t2.nii.gz -o out.nii.gz --crop
 ```
 
-### Crop a volume around the spinal cord
-
-```bash
-sc_crop -i t2.nii.gz
-```
-
-Outputs `t2_bbox.txt` next to the input with the inclusive voxel bounding box in native image space, compatible with SCT's `sct_crop_image`.
-
-### Optional parameters
+`t2_bbox.txt` contains inclusive voxel indices `xmin xmax ymin ymax zmin zmax` in the native image space.
 
 | Parameter | Description | Default |
 |---|---|---|
-| `-o OUTPUT` | Output path (bbox txt, or crop volume if `--crop`) | `<stem>_bbox.txt` |
-| `--crop` | Also save the cropped volume | off |
-| `--las` | Output cropped volume in LAS orientation (requires `--crop`) | off |
-| `--no-translate` | Do not update affine (by default affine is updated for correct FSLeyes overlay) | off |
+| `-i` / positional | Input NIfTI volume | — |
+| `-o OUTPUT` | Output path | `<stem>_bbox.txt` or `<stem>_crop.nii.gz` |
+| `--crop` | Save cropped volume | off |
+| `--las` | Output crop in LAS orientation (requires `--crop`) | off |
+| `--no-translate` | Do not update affine origin in the crop | off |
 | `--padding-rl MM` | Right-Left padding in mm | 10 |
 | `--padding-ap MM` | Anterior-Posterior padding in mm | 15 |
-| `--padding-si MM` | Superior-Inferior padding in mm (`'sup inf'` or single value) | `'30 20'` |
+| `--padding-si MM` | Superior-Inferior padding in mm (single value or `'sup inf'`) | 20 |
 | `--conf FLOAT` | Detection confidence threshold | from config |
-| `--regularization` | Regularization method: `cls`, `graphtrim`, `none` | `cls` |
-| `--no-onnx` | Use PyTorch `.pt` inference instead of ONNX Runtime | off |
-| `--device` | Inference device: `cpu`, `cuda`, `mps` (only with `--no-onnx`) | auto |
-| `--debug` | Save `<stem>_debug.png` (per-slice panel with bbox) | off |
-| `--time` | Print elapsed time per pipeline step | off |
+| `--cls-conf FLOAT` | Classifier confidence threshold | 0.5 |
+| `--regularization` | `cls`, `graphtrim`, or `none` | `cls` |
+| `--no-onnx` | Use PyTorch `.pt` instead of ONNX Runtime | off |
+| `--device` | `cpu`, `cuda`, `mps` — only with `--no-onnx` | auto |
+| `--norm-scope` | `volume` or `slice` normalisation | `volume` |
+| `--debug` | Save `<stem>_debug.png` (per-slice bbox panel) | off |
+| `--time` | Print elapsed time per step | off |
 
-### GPU inference
-
-By default, `sc_crop` uses ONNX Runtime (CPU), which loads ~15× faster than PyTorch and requires no GPU.
-For GPU inference, use PyTorch with `--no-onnx`:
-
-```bash
-sc_crop -i t2.nii.gz --no-onnx --device cuda
-```
-
-> **Note:** `onnxruntime-gpu` is not supported as it conflicts with `onnxruntime` and requires a specific CUDA version. GPU users should use `--no-onnx --device cuda` instead.
+> By default sc_crop uses ONNX Runtime (CPU). For GPU inference use `--no-onnx --device cuda`.
 
 ---
 
 ## Python API
 
+### Detection and cropping
+
+```python
+from sc_crop import detect, crop, restore_segmentation
+import nibabel as nib
+
+# Detect the spinal cord bbox
+ctx = detect("t2.nii.gz", padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=30)
+
+# Apply the bbox to any volume in the same space (image, label, …)
+crop_img   = crop(nib.load("t2.nii.gz"),       ctx)  # nib.Nifti1Image
+crop_label = crop(nib.load("t2_label.nii.gz"), ctx)  # same bbox
+
+# ctx keys: xmin, xmax, ymin, ymax, zmin, zmax, bbox_file, original_axcodes
+```
+
+### Restore a segmentation to the original space
+
+```python
+seg_full = restore_segmentation(seg_crop, ctx)  # same shape + affine as the original input
+```
+
+### run() — lower-level, writes files to disk
+
 ```python
 from sc_crop import run
 
-result = run("t2.nii.gz")                             # bbox txt only
-result = run("t2.nii.gz", crop=True)                  # + cropped volume (native)
-result = run("t2.nii.gz", crop=True, las=True)        # + cropped volume (LAS)
-result = run("t2.nii.gz", crop=True, translate=False) # affine NOT updated
+result = run("t2.nii.gz")                              # bbox txt only
+result = run("t2.nii.gz", crop=True)                   # + cropped volume (native)
+result = run("t2.nii.gz", crop=True, las=True)         # + cropped volume (LAS)
+result = run("t2.nii.gz", crop=True, translate=False)  # affine origin NOT updated
 
-# result keys: bbox_file, xmin, xmax, ymin, ymax, zmin, zmax, original_axcodes
-# + output (if crop=True)
+# result keys always: bbox_file, xmin, xmax, ymin, ymax, zmin, zmax, original_axcodes
+# + "output" (path to crop file) only when crop=True
 ```
 
----
+Parameters mirror the CLI: `padding_rl_mm`, `padding_ap_mm`, `padding_si_mm`, `conf`, `cls_conf`,
+`regularization`, `use_onnx`, `device`, `norm_scope`, `debug`, `time_steps`, `output_path`.
 
-## Requirements
+### Convenience aliases
 
-Python ≥ 3.8. Installed automatically by pip:
-`nibabel`, `numpy`, `pillow`, `pyyaml`, `onnxruntime`.
+```python
+from sc_crop import detect_and_crop  # equivalent to: crop(nib.load(img), detect(img))
+crop_nii, ctx = detect_and_crop("t2.nii.gz")
 
-`ultralytics` is an optional dependency required only for PyTorch/GPU inference (`--no-onnx`):
-
-```bash
-pip install "sc-crop[yolo]"
+from sc_crop import crop_nifti  # alias for crop()
 ```
 
 ---
 
 ## Use in your training pipeline
 
-Add sc_crop to your existing dataset conversion loop. `detect()` runs the detection once and returns a context with the bbox coordinates. `crop()` applies that bbox to any volume — use it for both the image and the label.
+Add sc_crop to your dataset conversion loop. Detect once, crop image and label with the same bbox.
 
 ```python
 from sc_crop import detect, crop
 import nibabel as nib
 
-# Inside your existing conversion loop (after reorienting image and label to RPI):
-ctx        = detect(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+# After reorienting image and label to RPI:
+ctx        = detect(image_rpi, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=30)
 crop_img   = crop(nib.load(image_rpi), ctx)
 crop_label = crop(nib.load(label_rpi), ctx)
 
@@ -139,20 +129,28 @@ nib.save(crop_label, out_label)
 
 ## Inference with a model trained with sc_crop
 
-Use `detect()` + `crop()` + `restore_segmentation()` — the segmentation is returned in the exact same space as the original input image.
+Use the **same padding as at training time**. The segmentation is returned in the original image space.
 
 ```python
 from sc_crop import detect, crop, restore_segmentation
 import nibabel as nib
 
-ctx      = detect(image_path, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+ctx      = detect(image_path, padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=30)
 crop_img = crop(nib.load(image_path), ctx)
 
-seg_crop = my_model(crop_img)  # nib.Nifti1Image in cropped space
+seg_crop = my_model(crop_img)           # nib.Nifti1Image in cropped space
 
 seg_full = restore_segmentation(seg_crop, ctx)
 nib.save(seg_full, out_path)
 ```
+
+---
+
+## Requirements
+
+Python ≥ 3.8. Dependencies installed automatically: `nibabel`, `numpy`, `pillow`, `pyyaml`, `onnxruntime`.
+
+`ultralytics` is optional — only needed for GPU/batch inference (`--no-onnx` or `preprocess_dataset`).
 
 ---
 
