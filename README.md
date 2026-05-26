@@ -4,7 +4,7 @@ Segmentation models for spinal cord pathologies (tumors, lesions, SC itself) are
 
 This reduces memory usage, speeds up inference, and often improves model accuracy by removing irrelevant background. The recommended workflow is:
 
-1. **Preprocessing** — crop all training images and labels around the detected spinal cord using a fixed padding
+1. **Preprocessing** — crop all training images and labels around the detected spinal cord, adding a fixed security margin
 2. **Training** — train your segmentation model on the cropped volumes
 3. **Inference** — apply the same sc-crop preprocessing to new images, run your model, then optionally restore the segmentation to the original space
 
