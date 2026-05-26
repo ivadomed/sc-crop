@@ -194,14 +194,7 @@ sc-crop fits naturally before nnUNet: crop the raw dataset first, then run the s
 
 **Preprocessing (once, before training):**
 
-```bash
-# Crop every image and label in your nnUNet raw dataset
-for subject in Dataset001_MyTask/imagesTr/:
-    sc_crop -i imagesTr/${subject} --crop -o imagesTr_crop/${subject}
-    sc_crop -i labelsTr/${subject} --crop -o labelsTr_crop/${subject}
-```
-
-Or with the Python API to ensure image and label share the exact same bbox:
+Use the Python API so that image and label always share the exact same bbox — `detect()` is called once per subject, then `crop()` is applied to both:
 
 ```python
 from sc_crop import detect, crop
@@ -211,9 +204,9 @@ PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
            pad_anterior=15, pad_posterior=15)
 
 for subject in subjects:
-    ctx   = detect(subject.image, **PAD)          # detect once
-    nib.save(crop(nib.load(subject.image), ctx),  subject.image_crop)
-    nib.save(crop(nib.load(subject.label), ctx),  subject.label_crop)
+    ctx   = detect(subject.image, **PAD)                             # detect once
+    nib.save(crop(nib.load(subject.image), ctx), subject.image_crop) # same bbox
+    nib.save(crop(nib.load(subject.label), ctx), subject.label_crop) # same bbox
 ```
 
 **Training:** run `nnUNetv2_plan_and_preprocess` and `nnUNetv2_train` on the cropped dataset as usual.
