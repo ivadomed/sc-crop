@@ -67,25 +67,25 @@ examples:
     parser.add_argument("--no-translate", dest="translate", action="store_false",
                         help="Do not update affine (by default affine is updated for correct FSLeyes overlay)")
     parser.set_defaults(translate=True)
-    pad = parser.add_argument_group("padding (mm) — individual > shorthand > default")
+    pad = parser.add_argument_group("padding (mm) — individual > symmetric > default")
     pad.add_argument("--pad-sup",  type=float, default=None, dest="pad_superior",
                      metavar="MM", help="Superior padding mm (default 40)")
     pad.add_argument("--pad-inf",  type=float, default=None, dest="pad_inferior",
                      metavar="MM", help="Inferior padding mm (default 60)")
     pad.add_argument("--pad-si",   type=float, default=None, dest="pad_si",
-                     metavar="MM", help="Symmetric SI shorthand — overridden by --pad-sup/inf")
+                     metavar="MM", help="Symmetric SI — overridden by --pad-sup/inf")
     pad.add_argument("--pad-left", type=float, default=None, dest="pad_left",
                      metavar="MM", help="Left padding mm (default 10)")
     pad.add_argument("--pad-right",type=float, default=None, dest="pad_right",
                      metavar="MM", help="Right padding mm (default 10)")
     pad.add_argument("--pad-rl",   type=float, default=None, dest="pad_rl",
-                     metavar="MM", help="Symmetric RL shorthand — overridden by --pad-left/right")
+                     metavar="MM", help="Symmetric RL — overridden by --pad-left/right")
     pad.add_argument("--pad-ant",  type=float, default=None, dest="pad_anterior",
                      metavar="MM", help="Anterior padding mm (default 15)")
     pad.add_argument("--pad-post", type=float, default=None, dest="pad_posterior",
                      metavar="MM", help="Posterior padding mm (default 15)")
     pad.add_argument("--pad-ap",   type=float, default=None, dest="pad_ap",
-                     metavar="MM", help="Symmetric AP shorthand — overridden by --pad-ant/post")
+                     metavar="MM", help="Symmetric AP — overridden by --pad-ant/post")
     parser.add_argument("--conf", type=float, default=None,
                         help="Detection confidence threshold (default: from config.yaml)")
     parser.add_argument("--regularization", default=None, choices=["cls", "graphtrim", "none"],

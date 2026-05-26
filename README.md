@@ -38,7 +38,7 @@ sc_crop t2.nii.gz
 sc_crop -i t2.nii.gz -o out.nii.gz --crop
 ```
 
-Padding around the detected spinal cord (mm). Defaults: `sup=40, inf=60, left=right=10, ant=post=15`. Clamped to image boundaries. Priority: individual > shorthand > default.
+Padding around the detected spinal cord (mm). Defaults: `sup=40, inf=60, left=right=10, ant=post=15`. Clamped to image boundaries. Priority: individual > symmetric > default.
 
 ```bash
 sc_crop t2.nii.gz --crop --pad-sup 50 --pad-inf 80 --pad-left 10 --pad-right 10 --pad-ant 15 --pad-post 15
@@ -76,7 +76,7 @@ nib.save(crop_label, "t2_label_crop.nii.gz")
 
 ### Padding
 
-All values define the margin **around the detected spinal cord**, in mm. Priority per face: **individual > shorthand > default**.
+All values define the margin **around the detected spinal cord**, in mm. Priority per face: **individual > symmetric > default**.
 
 ```python
 # Defaults: superior=40mm, inferior=60mm, left=right=10mm, anterior=posterior=15mm
@@ -85,10 +85,10 @@ bbox = detect("t2.nii.gz")
 # Adjust SI only (most common)
 bbox = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
 
-# Symmetric SI shorthand
+# Symmetric SI
 bbox = detect("t2.nii.gz", pad_si=30)
 
-# Shorthand + override one face
+# Symmetric + override one face
 bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)
 
 # Full per-face control

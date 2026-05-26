@@ -107,10 +107,10 @@ def example_padding(img_path: str) -> None:
     # Defaults: superior=40, inferior=60, left=right=10, anterior=posterior=15
     bbox_default = detect(img_path)
 
-    # Symmetric SI shorthand (common for focused cervical datasets)
+    # Symmetric SI (common for focused cervical datasets)
     bbox_si = detect(img_path, pad_si=30)
 
-    # Shorthand + override one face (highest priority)
+    # Symmetric + override one face (highest priority)
     bbox_mix = detect(img_path, pad_si=30, pad_inferior=60)
 
     # Full individual control (all 6 faces)
@@ -131,7 +131,7 @@ def example_padding(img_path: str) -> None:
 
     # Priority rule: pad_si=30 gives inf=30, but pad_inferior=60 overrides → bigger z range
     assert _z(bbox_mix) >= _z(bbox_si), "pad_inferior=60 should give >= padding than pad_si=30"
-    print("  priority rule verified: individual > shorthand ✓")
+    print("  priority rule verified: individual > symmetric ✓")
 
 
 # ─── Example 4 — detect_and_crop convenience wrapper ─────────────────────────

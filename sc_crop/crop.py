@@ -30,9 +30,9 @@ Normalisation (--norm-scope):
                     intensity across slices — matches the training pipeline default.
   slice:            percentiles computed independently per slice (legacy behaviour).
 
-Padding API (9 parameters, priority: individual > shorthand > default):
+Padding API (9 parameters, priority: individual > symmetric > default):
   Individual (per face):  pad_superior, pad_inferior, pad_left, pad_right, pad_anterior, pad_posterior
-  Shorthands (symmetric): pad_si  (= superior + inferior),
+  Symmetric: pad_si  (= superior + inferior),
                           pad_rl  (= left + right),
                           pad_ap  (= anterior + posterior)
   Defaults: superior=40mm, inferior=60mm, left=right=10mm, anterior=posterior=15mm.
@@ -47,7 +47,7 @@ Usage:
 
     bbox = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
     bbox = detect("t2.nii.gz", pad_si=30)                    # symmetric SI
-    bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # shorthand + override
+    bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # symmetric + override
     bbox = detect("t2.nii.gz", use_onnx=False, device="cuda") # GPU inference (.pt only)
 """
 
@@ -90,7 +90,7 @@ def _resolve_padding(
 ) -> tuple:
     """Resolve 9 padding inputs to 6 face scalars (mm).
 
-    Priority per face: individual > shorthand > default.
+    Priority per face: individual > symmetric > default.
     Returns (left, right, anterior, posterior, superior, inferior).
     """
     sup  = pad_superior  if pad_superior  is not None else (pad_si if pad_si is not None else _DEFAULT_PAD_SUPERIOR)
@@ -589,15 +589,15 @@ def detect(img_path: str,
         img_path:       Path to the input NIfTI image (any orientation, any contrast).
         config:         Config dict (loaded from config.yaml if None).
         model_path:     Path to model file (auto-downloaded if None).
-        pad_superior:   Superior padding mm (default 40). Individual > shorthand > default.
+        pad_superior:   Superior padding mm (default 40). Individual > symmetric > default.
         pad_inferior:   Inferior padding mm (default 60).
         pad_left:       Left padding mm (default 10).
         pad_right:      Right padding mm (default 10).
         pad_anterior:   Anterior padding mm (default 15).
         pad_posterior:  Posterior padding mm (default 15).
-        pad_si:         Symmetric SI shorthand — overridden by pad_superior/inferior.
-        pad_rl:         Symmetric RL shorthand — overridden by pad_left/right.
-        pad_ap:         Symmetric AP shorthand — overridden by pad_anterior/posterior.
+        pad_si:         Symmetric SI — overridden by pad_superior/inferior.
+        pad_rl:         Symmetric RL — overridden by pad_left/right.
+        pad_ap:         Symmetric AP — overridden by pad_anterior/posterior.
         conf:           Detection confidence threshold (default: from config.yaml).
         regularization: "cls" (default), "graphtrim", or "none".
         cls_conf:       CLS classifier confidence threshold (default: 0.5).
@@ -626,7 +626,7 @@ def detect(img_path: str,
         # Custom padding:
         bbox = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
         bbox = detect("t2.nii.gz", pad_si=30)                    # symmetric SI
-        bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # shorthand + override
+        bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # symmetric + override
     """
     import time as _time
 

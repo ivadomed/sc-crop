@@ -36,7 +36,7 @@ def main():
     p.add_argument("--pad-inf",    type=float, default=None, dest="pad_inferior",
                    metavar="MM",   help="Inferior padding mm (default 60)")
     p.add_argument("--pad-si",     type=float, default=None, dest="pad_si",
-                   metavar="MM",   help="Symmetric SI shorthand")
+                   metavar="MM",   help="Symmetric SI")
     p.add_argument("--pad-rl",     type=float, default=None, dest="pad_rl",
                    metavar="MM",   help="Symmetric RL padding mm (default 10)")
     p.add_argument("--pad-ap",     type=float, default=None, dest="pad_ap",

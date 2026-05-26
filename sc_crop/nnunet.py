@@ -296,10 +296,10 @@ def preprocess_dataset(
 ) -> Path:
     """Crop a nnUNet dataset using sc_crop detection. Returns the output dataset path.
 
-    Padding (priority: individual > shorthand > default):
+    Padding (priority: individual > symmetric > default):
       Individual: pad_superior(40), pad_inferior(60), pad_left(10), pad_right(10),
                   pad_anterior(15), pad_posterior(15).
-      Shorthand:  pad_si (= superior + inferior), pad_rl (= left + right),
+      Symmetric:  pad_si (= superior + inferior), pad_rl (= left + right),
                   pad_ap (= anterior + posterior).
 
     Args:
@@ -440,13 +440,13 @@ def _parse_args(argv=None):
                    help="CPU workers for parallel load/save (default: min(8, cpu_count))")
     p.add_argument("--pad-sup",  type=float, default=None, dest="pad_superior",  metavar="MM", help="Superior padding mm (default 40)")
     p.add_argument("--pad-inf",  type=float, default=None, dest="pad_inferior",  metavar="MM", help="Inferior padding mm (default 60)")
-    p.add_argument("--pad-si",   type=float, default=None, dest="pad_si",        metavar="MM", help="Symmetric SI shorthand")
+    p.add_argument("--pad-si",   type=float, default=None, dest="pad_si",        metavar="MM", help="Symmetric SI")
     p.add_argument("--pad-left", type=float, default=None, dest="pad_left",      metavar="MM", help="Left padding mm (default 10)")
     p.add_argument("--pad-right",type=float, default=None, dest="pad_right",     metavar="MM", help="Right padding mm (default 10)")
-    p.add_argument("--pad-rl",   type=float, default=None, dest="pad_rl",        metavar="MM", help="Symmetric RL shorthand")
+    p.add_argument("--pad-rl",   type=float, default=None, dest="pad_rl",        metavar="MM", help="Symmetric RL")
     p.add_argument("--pad-ant",  type=float, default=None, dest="pad_anterior",  metavar="MM", help="Anterior padding mm (default 15)")
     p.add_argument("--pad-post", type=float, default=None, dest="pad_posterior", metavar="MM", help="Posterior padding mm (default 15)")
-    p.add_argument("--pad-ap",   type=float, default=None, dest="pad_ap",        metavar="MM", help="Symmetric AP shorthand")
+    p.add_argument("--pad-ap",   type=float, default=None, dest="pad_ap",        metavar="MM", help="Symmetric AP")
     p.add_argument("--conf",          type=float, default=0.1,  help="YOLO detection confidence")
     p.add_argument("--cls-conf",      type=float, default=0.5,  help="Classifier confidence")
     p.add_argument("--skip-failed",   action="store_true",
