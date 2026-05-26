@@ -38,7 +38,7 @@ sc_crop t2.nii.gz
 sc_crop -i t2.nii.gz -o out.nii.gz --crop
 ```
 
-You can define a margin around the detected spinal cord (mm, clamped to image boundaries). Defaults: `sup=40, inf=60, left=right=10, ant=post=15`. Priority: individual > symmetric > default.
+You can define a margin around the detected spinal cord (mm, clamped to image boundaries). Defaults: `sup=40, inf=60, left=right=10, ant=post=15`. Priority: individual (e.g. `--pad-sup`) > symmetric (e.g. `--pad-si`) > default.
 
 ```bash
 sc_crop t2.nii.gz --crop --pad-sup 50 --pad-inf 80 --pad-left 10 --pad-right 10 --pad-ant 15 --pad-post 15
