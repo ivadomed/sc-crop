@@ -54,7 +54,7 @@ Run `sc_crop --help` for all options.
 
 ## Python API
 
-`detect()` is pure — it writes no files. All file I/O is explicit in your code.
+`detect()` returns the bounding box coordinates and the original image orientation. No files are written — all file I/O is explicit in your code.
 
 ### Detect + crop
 
