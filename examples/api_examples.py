@@ -127,32 +127,40 @@ def example_detect_and_crop(img_path: str) -> None:
 # ─── Example 5 — restore_segmentation ────────────────────────────────────────
 
 def example_restore(img_path: str) -> None:
-    """Simulate a model that segments in cropped space, then restore to full space."""
-    print("\n── Example 5: restore_segmentation() ───────────────────────────")
+    """Fake model (center cylinder) → restore segmentation to the original space.
+
+    After sc-crop the spinal cord sits near the center of the RL/AP axes, so a
+    small central cylinder approximates where a real model would place the SC
+    segmentation. Open the output in FSLeyes alongside the original to verify
+    the segmentation lands at the correct anatomical location.
+    """
+    print("\n── Example 5: fake model + restore_segmentation() ──────────────")
 
     crop_nii, ctx = detect_and_crop(img_path)
 
-    # Simulate a segmentation output in cropped space (ones mask — just for demo)
-    fake_seg = nib.Nifti1Image(
-        np.ones(crop_nii.shape[:3], dtype=np.uint8),
-        crop_nii.affine,
-    )
+    # Fake model: cylinder centered in RL/AP, full SI extent
+    X, Y, Z = crop_nii.shape[:3]
+    cx, cy   = X / 2, Y / 2
+    radius   = max(1, min(X, Y) // 6)
+    xx, yy   = np.meshgrid(np.arange(X), np.arange(Y), indexing="ij")
+    cylinder = ((xx - cx) ** 2 + (yy - cy) ** 2 <= radius ** 2)
+    mask     = np.zeros((X, Y, Z), dtype=np.uint8)
+    mask[cylinder] = 1
+    fake_seg = nib.Nifti1Image(mask, crop_nii.affine)
 
     # Restore to the full original image space
-    seg_full = restore_segmentation(fake_seg, ctx)
-
+    seg_full   = restore_segmentation(fake_seg, ctx)
     orig_shape = nib.load(img_path).shape[:3]
     assert seg_full.shape == orig_shape, f"expected {orig_shape}, got {seg_full.shape}"
 
-    n_nonzero = int(np.asarray(seg_full.dataobj).sum())
-    n_crop    = int(np.prod(crop_nii.shape[:3]))
-    print(f"  original shape      : {orig_shape}")
-    print(f"  restored seg shape  : {seg_full.shape}")
-    print(f"  non-zero voxels     : {n_nonzero} (= crop volume {n_crop} ✓)")
+    n = int(np.asarray(seg_full.dataobj).sum())
+    print(f"  crop shape          : {crop_nii.shape}  (cylinder r={radius}px)")
+    print(f"  restored seg shape  : {seg_full.shape}  ({n} non-zero voxels)")
 
     out = Path(img_path).with_name(Path(img_path).name.replace(".nii", "_ex5_seg.nii"))
     nib.save(seg_full, out)
     print(f"  → {out}")
+    print(f"  verify: fsleyes {img_path} {out} -cm red")
 
 
 # ─── Example 6 — GPU inference (PyTorch, no ONNX) ────────────────────────────
