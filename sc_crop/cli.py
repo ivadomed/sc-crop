@@ -15,8 +15,11 @@ Usage:
 
 import argparse
 import sys
+from pathlib import Path
 
-from .crop import run
+import nibabel as nib
+
+from .crop import detect, crop, _write_bbox_txt, _stem, _warn_overwrite
 from .download import download
 
 
@@ -107,9 +110,8 @@ examples:
     if not input_path:
         parser.error("an input file is required (positional or -i)")
 
-    result = run(
-        input_path    = input_path,
-        output_path   = args.output,
+    ctx = detect(
+        input_path,
         model_path    = args.model,
         pad_superior  = args.pad_superior,
         pad_inferior  = args.pad_inferior,
@@ -127,18 +129,37 @@ examples:
         use_onnx       = args.use_onnx,
         norm_scope     = args.norm_scope,
         debug          = args.debug,
-        crop           = args.crop,
-        las            = args.las,
-        translate      = args.translate,
         time_steps     = args.time,
     )
 
-    if "output" in result:
-        print(f"Crop    : {result['output']}")
+    parent, stem = _stem(input_path)
 
-    xmin, xmax = result["xmin"], result["xmax"]
-    ymin, ymax = result["ymin"], result["ymax"]
-    zmin, zmax = result["zmin"], result["zmax"]
+    # ── Write bbox.txt ────────────────────────────────────────────────────────
+    from .crop import BBox3D
+    bbox_orig = BBox3D(
+        ctx["xmin"], ctx["xmax"] + 1,
+        ctx["ymin"], ctx["ymax"] + 1,
+        ctx["zmin"], ctx["zmax"] + 1,
+    )
+    bbox_txt = Path(args.output) if (args.output and not args.crop) else parent / f"{stem}_bbox.txt"
+    _write_bbox_txt(bbox_txt, bbox_orig)
+    print(f"          → {bbox_txt}")
+
+    # ── Crop ──────────────────────────────────────────────────────────────────
+    if args.crop:
+        if args.las:
+            cropped   = ctx["_bbox_pad_las"].crop(ctx["_img_las"], translate=args.translate)
+            crop_path = Path(args.output) if args.output else parent / f"{stem}_crop_las.nii.gz"
+        else:
+            cropped   = crop(nib.load(input_path), ctx, translate=args.translate)
+            crop_path = Path(args.output) if args.output else parent / f"{stem}_crop.nii.gz"
+        _warn_overwrite(crop_path)
+        nib.save(cropped, crop_path)
+        print(f"Crop    : {crop_path}  shape={cropped.shape}")
+
+    xmin, xmax = ctx["xmin"], ctx["xmax"]
+    ymin, ymax = ctx["ymin"], ctx["ymax"]
+    zmin, zmax = ctx["zmin"], ctx["zmax"]
     inp        = input_path
 
     GREEN, RESET = "\033[32m", "\033[0m"

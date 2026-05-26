@@ -7,7 +7,6 @@ Public API:
     restore_segmentation(seg_nii, ctx)     → full-space NIfTI — restore segmentation to original space
     detect_and_crop(img_path, ...)         → (crop_nii, ctx)  — convenience: detect + crop image
     crop_nifti(img, ctx)                   → cropped NIfTI    — alias for crop() (backward compat)
-    run(input_path, ...)                   → detect SC bbox (+ optional crop file)
     preprocess_dataset(...)                → batch nnUNet preprocessing on GPU
     download()                             → pre-download ONNX models (auto on first use)
     download_pt()                          → pre-download PyTorch models (GPU batch)
@@ -22,7 +21,7 @@ Version constants:
     MODEL_VERSION     → alias for __model_version__
 """
 
-from .crop import crop, crop_nifti, detect, detect_and_crop, load_config, restore_segmentation, run
+from .crop import crop, crop_nifti, detect, detect_and_crop, load_config, restore_segmentation
 from .download import (
     download,
     download_pt,

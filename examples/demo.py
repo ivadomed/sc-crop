@@ -3,6 +3,7 @@ sc-crop demo — spinal cord detection and cropping.
 
 Detects the spinal cord bounding box, prints coordinates, and optionally saves
 the cropped volume. No segmentation model required — only the SC detector.
+detect() is pure and writes no files; cropping and saving are done here explicitly.
 
 Usage:
     python examples/demo.py t2.nii.gz
@@ -63,7 +64,6 @@ def main():
     print(f"  x  [{ctx['xmin']:4d} : {ctx['xmax']:4d}]  ({ctx['xmax'] - ctx['xmin'] + 1} voxels)")
     print(f"  y  [{ctx['ymin']:4d} : {ctx['ymax']:4d}]  ({ctx['ymax'] - ctx['ymin'] + 1} voxels)")
     print(f"  z  [{ctx['zmin']:4d} : {ctx['zmax']:4d}]  ({ctx['zmax'] - ctx['zmin'] + 1} voxels)")
-    print(f"  → {ctx['bbox_file']}")
 
     if args.crop:
         orig     = nib.load(args.input)

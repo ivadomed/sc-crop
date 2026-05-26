@@ -1,12 +1,20 @@
 """
 Core logic for spinal cord detection and bounding box computation.
 
-Default output: <stem>_bbox.txt with inclusive voxel indices in native image space,
-compatible with SCT's ImageCropper.get_bbox_from_minmax(xmin, xmax, ymin, ymax, zmin, zmax).
+Public API (pure — no file I/O):
+    detect(img_path, ...)              → ctx dict     — detect SC bbox
+    crop(img, ctx)                     → NIfTI        — crop any volume with the same bbox
+    detect_and_crop(img_path, ...)     → (NIfTI, ctx) — convenience: detect + crop in one call
+    restore_segmentation(seg, ctx)     → NIfTI        — restore segmentation to original space
 
-High-level API for inference pipelines:
-    detect_and_crop(img_path)           → (crop_nii, ctx)  — crop in memory + context
-    restore_segmentation(seg_nii, ctx)  → full-space NIfTI — restore after model inference
+The context dict returned by detect() contains:
+    xmin, xmax, ymin, ymax, zmin, zmax  — inclusive bbox in native voxel space
+    original_axcodes                    — e.g. "RAS", "LPI"
+  Private keys (for CLI / advanced use):
+    _original_img   — loaded NIfTI in native orientation (for restore_segmentation)
+    _img_las        — LAS-reoriented NIfTI (for --las crop)
+    _bbox_pad_las   — BBox3D in LAS space (for --las crop)
+    _original_ornt  — nibabel orientation array of the original image
 
 Regularization (--regularization):
   cls       (default): runs a classifier on detection components from most superior
@@ -30,18 +38,17 @@ Padding API (9 parameters, priority: individual > shorthand > default):
   Defaults: superior=40mm, inferior=60mm, left=right=10mm, anterior=posterior=15mm.
 
 Usage:
-    from sc_crop.crop import run
-    result = run("t2.nii.gz")                              # ONNX + cls regularization (default)
-    result = run("t2.nii.gz", pad_superior=50, pad_inferior=80)
-    result = run("t2.nii.gz", pad_si=30)                   # symmetric SI
-    result = run("t2.nii.gz", pad_si=30, pad_inferior=60)  # shorthand + override
-    result = run("t2.nii.gz", use_onnx=False)             # PyTorch .pt inference
-    result = run("t2.nii.gz", regularization="graphtrim")  # graphtrim regularization
-    result = run("t2.nii.gz", regularization="none")       # no regularization
-    result = run("t2.nii.gz", norm_scope="slice")          # per-slice normalisation
-    result = run("t2.nii.gz", crop=True)                   # + cropped volume (native)
-    result = run("t2.nii.gz", crop=True, las=True)         # + cropped volume (LAS)
-    result = run("t2.nii.gz", use_onnx=False, device="cuda")  # GPU inference (.pt only)
+    from sc_crop import detect, crop
+    import nibabel as nib
+
+    ctx        = detect("t2.nii.gz")
+    crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
+    crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
+
+    ctx = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
+    ctx = detect("t2.nii.gz", pad_si=30)                    # symmetric SI
+    ctx = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # shorthand + override
+    ctx = detect("t2.nii.gz", use_onnx=False, device="cuda") # GPU inference (.pt only)
 """
 
 from __future__ import annotations
@@ -551,44 +558,75 @@ def _write_bbox_txt(path: Path, bbox: BBox3D) -> None:
         f.write(f"{bbox.rl1} {bbox.rl2 - 1} {bbox.ap1} {bbox.ap2 - 1} {bbox.z1} {bbox.z2 - 1}\n")
 
 
-# ─── Main entry point ─────────────────────────────────────────────────────────
+# ─── Detection pipeline ───────────────────────────────────────────────────────
 
-def run(input_path: str,
-        config: dict | None = None,
-        output_path: str | None = None,
-        model_path: str | None = None,
-        pad_superior: float | None = None,
-        pad_inferior: float | None = None,
-        pad_left: float | None = None,
-        pad_right: float | None = None,
-        pad_anterior: float | None = None,
-        pad_posterior: float | None = None,
-        pad_si: float | None = None,
-        pad_rl: float | None = None,
-        pad_ap: float | None = None,
-        conf: float | None = None,
-        regularization: str | None = None,
-        cls_conf: float | None = None,
-        device: str | None = None,
-        use_onnx: bool = True,
-        norm_scope: str = "volume",
-        debug: bool = False,
-        crop: bool = False,
-        las: bool = False,
-        translate: bool = True,
-        time_steps: bool = False) -> dict:
-    """Full pipeline: load → LAS → resample → infer → regularize → bbox 3D → save.
+def detect(img_path: str,
+           config: dict | None = None,
+           model_path: str | None = None,
+           pad_superior: float | None = None,
+           pad_inferior: float | None = None,
+           pad_left: float | None = None,
+           pad_right: float | None = None,
+           pad_anterior: float | None = None,
+           pad_posterior: float | None = None,
+           pad_si: float | None = None,
+           pad_rl: float | None = None,
+           pad_ap: float | None = None,
+           conf: float | None = None,
+           regularization: str | None = None,
+           cls_conf: float | None = None,
+           device: str | None = None,
+           use_onnx: bool = True,
+           norm_scope: str = "volume",
+           debug: bool = False,
+           time_steps: bool = False) -> dict:
+    """Detect the spinal cord bounding box. Pure — no files written.
 
-    Padding (priority: individual > shorthand > default):
-      Individual: pad_superior(40), pad_inferior(60), pad_left(10), pad_right(10),
-                  pad_anterior(15), pad_posterior(15)
-      Shorthand:  pad_si (= superior + inferior), pad_rl (= left + right), pad_ap (= ant + post)
-    use_onnx:       True (default) — ONNX Runtime inference (CPU, no ultralytics overhead).
-                    False — PyTorch .pt inference via ultralytics (supports --device cuda/mps).
-    regularization: "cls" (default), "graphtrim", or "none".
-    norm_scope:     "volume" (default) — percentiles from full volume (matches training pipeline).
-                    "slice" — percentiles per slice independently.
-    device:         "cpu", "cuda", "mps" — only used when use_onnx=False.
+    This is the primary entry point for inference pipelines. Call once, then
+    pass the returned context to crop() for any number of volumes (image, labels…).
+
+    Args:
+        img_path:       Path to the input NIfTI image (any orientation, any contrast).
+        config:         Config dict (loaded from config.yaml if None).
+        model_path:     Path to model file (auto-downloaded if None).
+        pad_superior:   Superior padding mm (default 40). Individual > shorthand > default.
+        pad_inferior:   Inferior padding mm (default 60).
+        pad_left:       Left padding mm (default 10).
+        pad_right:      Right padding mm (default 10).
+        pad_anterior:   Anterior padding mm (default 15).
+        pad_posterior:  Posterior padding mm (default 15).
+        pad_si:         Symmetric SI shorthand — overridden by pad_superior/inferior.
+        pad_rl:         Symmetric RL shorthand — overridden by pad_left/right.
+        pad_ap:         Symmetric AP shorthand — overridden by pad_anterior/posterior.
+        conf:           Detection confidence threshold (default: from config.yaml).
+        regularization: "cls" (default), "graphtrim", or "none".
+        cls_conf:       CLS classifier confidence threshold (default: 0.5).
+        device:         "cpu", "cuda", "mps" — only used when use_onnx=False.
+        use_onnx:       True (default) — ONNX Runtime inference (CPU, no ultralytics).
+                        False — PyTorch .pt inference (supports --device cuda/mps).
+        norm_scope:     "volume" (default) or "slice" — normalisation scope.
+        debug:          Save debug panel PNG (requires ultralytics).
+        time_steps:     Print elapsed time for each pipeline step.
+
+    Returns:
+        ctx dict with:
+          xmin, xmax, ymin, ymax, zmin, zmax — inclusive bbox in native voxel space
+          original_axcodes                   — e.g. "RAS", "LPI"
+          _original_img, _img_las, _bbox_pad_las, _original_ornt  (private keys)
+
+    Example::
+
+        from sc_crop import detect, crop
+        import nibabel as nib
+
+        ctx        = detect("t2.nii.gz")
+        crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
+        crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
+
+        # Custom padding:
+        ctx = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
+        ctx = detect("t2.nii.gz", pad_si=30)                    # symmetric SI
+        ctx = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # shorthand + override
     """
     import time as _time
 
@@ -607,9 +645,9 @@ def run(input_path: str,
     si_res        = config["si_res"]
     inplane_res   = config.get("inplane_res")
     channels      = config.get("channels", 3)
-    conf          = conf          if conf          is not None else config.get("conf", 0.1)
+    conf          = conf           if conf           is not None else config.get("conf", 0.1)
     regularization = regularization if regularization is not None else config.get("regularization", "cls")
-    cls_conf      = cls_conf      if cls_conf      is not None else config.get("cls_conf", 0.5)
+    cls_conf      = cls_conf       if cls_conf       is not None else config.get("cls_conf", 0.5)
 
     pad_left, pad_right, pad_anterior, pad_posterior, pad_superior, pad_inferior = _resolve_padding(
         pad_si=pad_si, pad_superior=pad_superior, pad_inferior=pad_inferior,
@@ -617,7 +655,7 @@ def run(input_path: str,
         pad_ap=pad_ap, pad_anterior=pad_anterior, pad_posterior=pad_posterior,
     )
 
-    img              = nib.load(input_path)
+    img              = nib.load(img_path)
     original_ornt    = nib.io_orientation(img.affine)
     original_axcodes = "".join(str(a) for a in nib.aff2axcodes(img.affine))
     img_las          = reorient_to_las(img)
@@ -625,7 +663,7 @@ def run(input_path: str,
     zooms            = tuple(float(v) for v in img_las.header.get_zooms()[:3])
     shape            = img_las.shape
 
-    print(f"Input   : {Path(input_path).name}  shape={img.shape}  ornt={original_axcodes}")
+    print(f"Input   : {Path(img_path).name}  shape={img.shape}  ornt={original_axcodes}")
     t0 = _tick("load + reorient", t0)
 
     if use_onnx:
@@ -642,7 +680,7 @@ def run(input_path: str,
         predict_kw: dict = {"verbose": False}
         if device:
             predict_kw["device"] = device
-        det_pt   = YOLO(str(model_path))
+        det_pt    = YOLO(str(model_path))
         cls_model = YOLO(str(ensure_cls_model())) if regularization == "cls" else None
     t0 = _tick("load model", t0)
 
@@ -677,7 +715,7 @@ def run(input_path: str,
         t0 = _tick("graphtrim regularization", t0)
 
     if debug:
-        parent, stem = _stem(input_path)
+        parent, stem = _stem(img_path)
         bbox_pad_for_debug = None
         if preds:
             bbox_for_debug     = aggregate_bbox_3d(preds, shape[0], shape[1], shape[2], si_zoom)
@@ -699,95 +737,48 @@ def run(input_path: str,
     bbox_pad_orig, _ = bbox_pad.reorient(shape, las_ornt, original_ornt)
     t0 = _tick("bbox aggregation", t0)
 
-    parent, stem = _stem(input_path)
-    bbox_txt = Path(output_path) if (output_path and not crop) else parent / f"{stem}_bbox.txt"
-    _write_bbox_txt(bbox_txt, bbox_pad_orig)
     xmin, xmax = bbox_pad_orig.rl1, bbox_pad_orig.rl2 - 1
     ymin, ymax = bbox_pad_orig.ap1, bbox_pad_orig.ap2 - 1
     zmin, zmax = bbox_pad_orig.z1,  bbox_pad_orig.z2  - 1
     print(f"BBox    : xmin={xmin} xmax={xmax}  ymin={ymin} ymax={ymax}  zmin={zmin} zmax={zmax}")
-    print(f"          → {bbox_txt}")
 
-    result = {
-        "bbox_file":        str(bbox_txt),
+    return {
         "original_axcodes": original_axcodes,
         "xmin": xmin, "xmax": xmax,
         "ymin": ymin, "ymax": ymax,
         "zmin": zmin, "zmax": zmax,
+        # private keys — used by CLI and restore_segmentation
+        "_original_img":  img,
+        "_img_las":       img_las,
+        "_bbox_pad_las":  bbox_pad,
+        "_original_ornt": original_ornt,
     }
-
-    if crop:
-        if las:
-            cropped   = bbox_pad.crop(img_las, translate=translate)
-            crop_path = Path(output_path) if output_path else parent / f"{stem}_crop_las.nii.gz"
-        else:
-            img_orig  = reorient_to_original(img_las, original_ornt)
-            cropped   = bbox_pad_orig.crop(img_orig, translate=translate)
-            crop_path = Path(output_path) if output_path else parent / f"{stem}_crop.nii.gz"
-        t0 = _tick("crop", t0)
-        _warn_overwrite(crop_path)
-        nib.save(cropped, crop_path)
-        print(f"Crop    : {crop_path}  shape={cropped.shape}")
-        t0 = _tick("save", t0)
-        result["output"] = str(crop_path)
-
-    return result
 
 
 # ─── High-level inference helpers ─────────────────────────────────────────────
 
-def detect(img_path, **kwargs) -> dict:
-    """Detect the spinal cord bounding box and return a context dict.
 
-    This is the entry point for pipelines that need to crop multiple volumes
-    (e.g. image + label) with the same bbox. Call detect() once, then pass the
-    returned context to crop() for each volume.
-
-    Args:
-        img_path: Path to the input NIfTI image (any orientation, any contrast).
-        **kwargs: Forwarded to run() — pad_superior, pad_inferior, pad_left, pad_right,
-                  pad_anterior, pad_posterior, pad_si, pad_rl, pad_ap,
-                  conf, cls_conf, regularization, device, use_onnx, norm_scope.
-
-    Returns:
-        ctx dict containing bbox coordinates and original image, to be passed to
-        crop() and restore_segmentation().
-
-    Example::
-
-        from sc_crop import detect, crop, restore_segmentation
-        import nibabel as nib
-
-        ctx        = detect("t2.nii.gz", pad_rl=10, pad_ap=15, pad_superior=40, pad_inferior=60)
-        crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
-        crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
-
-        seg_full = restore_segmentation(my_model(crop_img), ctx)
-    """
-    kwargs.pop("crop", None)
-    result = run(img_path, crop=False, **kwargs)
-    return {**result, "_original_img": nib.load(str(img_path))}
-
-
-def crop(img: "nib.Nifti1Image", ctx: dict) -> "nib.Nifti1Image":
+def crop(img: "nib.Nifti1Image", ctx: dict, translate: bool = True) -> "nib.Nifti1Image":
     """Crop a NIfTI image to the bbox detected by detect().
 
     Works for any volume in the same space as the image passed to detect() —
     use it for both the image and its label(s).
 
     Args:
-        img: NIfTI image to crop.
-        ctx: Context dict returned by detect() or detect_and_crop().
+        img:       NIfTI image to crop.
+        ctx:       Context dict returned by detect() or detect_and_crop().
+        translate: If True (default), update the affine so the crop sits at the
+                   correct world position (required for FSLeyes overlay).
 
     Returns:
-        nib.Nifti1Image cropped to the detected bbox, with updated affine.
+        nib.Nifti1Image cropped to the detected bbox.
 
     Example::
 
         from sc_crop import detect, crop
         import nibabel as nib
 
-        ctx        = detect("t2.nii.gz", pad_rl=10, pad_ap=15, pad_superior=40, pad_inferior=60)
+        ctx        = detect("t2.nii.gz")
         crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
         crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
     """
@@ -797,7 +788,8 @@ def crop(img: "nib.Nifti1Image", ctx: dict) -> "nib.Nifti1Image":
 
     data   = np.asarray(img.dataobj)
     affine = img.affine.copy()
-    affine[:3, 3] = (img.affine @ np.array([xmin, ymin, zmin, 1.0]))[:3]
+    if translate:
+        affine[:3, 3] = (img.affine @ np.array([xmin, ymin, zmin, 1.0]))[:3]
     return nib.Nifti1Image(data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], affine, img.header)
 
 
@@ -821,7 +813,7 @@ def detect_and_crop(img_path, **kwargs) -> tuple:
         to crop() or restore_segmentation().
     """
     ctx = detect(img_path, **kwargs)
-    return crop(nib.load(str(img_path)), ctx), ctx
+    return crop(ctx["_original_img"], ctx), ctx
 
 
 def restore_segmentation(seg_nii, ctx) -> "nib.Nifti1Image":

@@ -82,7 +82,7 @@ nib.save(crop_img,   "t2_crop.nii.gz")
 nib.save(crop_label, "t2_label_crop.nii.gz")
 ```
 
-`ctx` always contains: `xmin, xmax, ymin, ymax, zmin, zmax` (inclusive, native space), `bbox_file`, `original_axcodes`.
+`ctx` always contains: `xmin, xmax, ymin, ymax, zmin, zmax` (inclusive, native space), `original_axcodes`.
 
 ### Padding
 
@@ -124,25 +124,6 @@ nib.save(seg_full, "t2_seg.nii.gz")
 ```
 
 See `examples/infer_with_sc_crop.py` for a full inference template.
-
-### run() — lower-level, writes files to disk
-
-```python
-from sc_crop import run
-
-result = run("t2.nii.gz")                              # writes t2_bbox.txt
-result = run("t2.nii.gz", crop=True)                   # + t2_crop.nii.gz (native)
-result = run("t2.nii.gz", crop=True, las=True)         # + t2_crop_las.nii.gz
-result = run("t2.nii.gz", crop=True, translate=False)  # affine NOT updated
-
-# result keys: bbox_file, xmin, xmax, ymin, ymax, zmin, zmax, original_axcodes
-# + "output" (crop path) only when crop=True
-```
-
-All padding parameters (`pad_superior`, `pad_inferior`, `pad_si`, `pad_left`, `pad_right`,
-`pad_rl`, `pad_anterior`, `pad_posterior`, `pad_ap`) and other options (`conf`, `cls_conf`,
-`regularization`, `use_onnx`, `device`, `norm_scope`, `debug`, `time_steps`) are accepted
-by both `run()` and `detect()`.
 
 ### Shorthand functions
 
