@@ -110,7 +110,7 @@ examples:
     if not input_path:
         parser.error("an input file is required (positional or -i)")
 
-    ctx = detect(
+    bbox = detect(
         input_path,
         model_path    = args.model,
         pad_superior  = args.pad_superior,
@@ -137,9 +137,9 @@ examples:
     # ── Write bbox.txt ────────────────────────────────────────────────────────
     from .crop import BBox3D
     bbox_orig = BBox3D(
-        ctx["xmin"], ctx["xmax"] + 1,
-        ctx["ymin"], ctx["ymax"] + 1,
-        ctx["zmin"], ctx["zmax"] + 1,
+        bbox["xmin"], bbox["xmax"] + 1,
+        bbox["ymin"], bbox["ymax"] + 1,
+        bbox["zmin"], bbox["zmax"] + 1,
     )
     bbox_txt = Path(args.output) if (args.output and not args.crop) else parent / f"{stem}_bbox.txt"
     _write_bbox_txt(bbox_txt, bbox_orig)
@@ -148,18 +148,18 @@ examples:
     # ── Crop ──────────────────────────────────────────────────────────────────
     if args.crop:
         if args.las:
-            cropped   = ctx["_bbox_pad_las"].crop(ctx["_img_las"], translate=args.translate)
+            cropped   = bbox["_bbox_pad_las"].crop(bbox["_img_las"], translate=args.translate)
             crop_path = Path(args.output) if args.output else parent / f"{stem}_crop_las.nii.gz"
         else:
-            cropped   = crop(nib.load(input_path), ctx, translate=args.translate)
+            cropped   = crop(nib.load(input_path), bbox, translate=args.translate)
             crop_path = Path(args.output) if args.output else parent / f"{stem}_crop.nii.gz"
         _warn_overwrite(crop_path)
         nib.save(cropped, crop_path)
         print(f"Crop    : {crop_path}  shape={cropped.shape}")
 
-    xmin, xmax = ctx["xmin"], ctx["xmax"]
-    ymin, ymax = ctx["ymin"], ctx["ymax"]
-    zmin, zmax = ctx["zmin"], ctx["zmax"]
+    xmin, xmax = bbox["xmin"], bbox["xmax"]
+    ymin, ymax = bbox["ymin"], bbox["ymax"]
+    zmin, zmax = bbox["zmin"], bbox["zmax"]
     inp        = input_path
 
     GREEN, RESET = "\033[32m", "\033[0m"

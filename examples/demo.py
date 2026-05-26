@@ -48,7 +48,7 @@ def main():
     print(f"  sc-crop demo")
     print(f"{'─'*60}")
 
-    ctx = detect(
+    bbox = detect(
         args.input,
         pad_superior=args.pad_superior,
         pad_inferior=args.pad_inferior,
@@ -61,13 +61,13 @@ def main():
     print(f"\n{'─'*60}")
     print(f"  Bounding box (inclusive voxel indices, native space)")
     print(f"{'─'*60}")
-    print(f"  x  [{ctx['xmin']:4d} : {ctx['xmax']:4d}]  ({ctx['xmax'] - ctx['xmin'] + 1} voxels)")
-    print(f"  y  [{ctx['ymin']:4d} : {ctx['ymax']:4d}]  ({ctx['ymax'] - ctx['ymin'] + 1} voxels)")
-    print(f"  z  [{ctx['zmin']:4d} : {ctx['zmax']:4d}]  ({ctx['zmax'] - ctx['zmin'] + 1} voxels)")
+    print(f"  x  [{bbox['xmin']:4d} : {bbox['xmax']:4d}]  ({bbox['xmax'] - bbox['xmin'] + 1} voxels)")
+    print(f"  y  [{bbox['ymin']:4d} : {bbox['ymax']:4d}]  ({bbox['ymax'] - bbox['ymin'] + 1} voxels)")
+    print(f"  z  [{bbox['zmin']:4d} : {bbox['zmax']:4d}]  ({bbox['zmax'] - bbox['zmin'] + 1} voxels)")
 
     if args.crop:
         orig     = nib.load(args.input)
-        crop_nii = crop(orig, ctx)
+        crop_nii = crop(orig, bbox)
 
         inp      = Path(args.input)
         stem     = inp.name.replace(".nii.gz", "").replace(".nii", "")

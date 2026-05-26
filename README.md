@@ -77,17 +77,17 @@ Run `sc_crop --help` for all options.
 from sc_crop import detect, crop
 import nibabel as nib
 
-ctx = detect("t2.nii.gz")
+bbox = detect("t2.nii.gz")
 
 # crop() works on any volume in the same space (image, label, …)
-crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
-crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
+crop_img   = crop(nib.load("t2.nii.gz"),       bbox)
+crop_label = crop(nib.load("t2_label.nii.gz"), bbox)
 
 nib.save(crop_img,   "t2_crop.nii.gz")
 nib.save(crop_label, "t2_label_crop.nii.gz")
 ```
 
-`ctx` contains: `xmin, xmax, ymin, ymax, zmin, zmax` (inclusive, native space), `original_axcodes`.
+`bbox` contains: `xmin, xmax, ymin, ymax, zmin, zmax` (inclusive, native space), `original_axcodes`.
 
 ### Padding
 
@@ -95,19 +95,19 @@ All values define the margin **around the detected spinal cord**, in mm. Priorit
 
 ```python
 # Defaults: superior=40mm, inferior=60mm, left=right=10mm, anterior=posterior=15mm
-ctx = detect("t2.nii.gz")
+bbox = detect("t2.nii.gz")
 
 # Adjust SI only (most common)
-ctx = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
+bbox = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
 
 # Symmetric SI shorthand
-ctx = detect("t2.nii.gz", pad_si=30)
+bbox = detect("t2.nii.gz", pad_si=30)
 
 # Shorthand + override one face
-ctx = detect("t2.nii.gz", pad_si=30, pad_inferior=60)
+bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)
 
 # Full per-face control
-ctx = detect("t2.nii.gz",
+bbox = detect("t2.nii.gz",
              pad_superior=40, pad_inferior=60,
              pad_left=10,     pad_right=10,
              pad_anterior=15, pad_posterior=15)
@@ -121,12 +121,12 @@ Padding is always clamped to the image boundaries — no out-of-bounds indices a
 from sc_crop import detect, crop, restore_segmentation
 import nibabel as nib
 
-ctx      = detect("t2.nii.gz")
-crop_img = crop(nib.load("t2.nii.gz"), ctx)
+bbox      = detect("t2.nii.gz")
+crop_img = crop(nib.load("t2.nii.gz"), bbox)
 
 seg_crop = my_model(crop_img)              # your model — returns NIfTI in cropped space
 
-seg_full = restore_segmentation(seg_crop, ctx)
+seg_full = restore_segmentation(seg_crop, bbox)
 nib.save(seg_full, "t2_seg.nii.gz")
 ```
 
@@ -135,7 +135,7 @@ nib.save(seg_full, "t2_seg.nii.gz")
 ```python
 from sc_crop import detect_and_crop
 
-crop_nii, ctx = detect_and_crop("t2.nii.gz")  # detect + crop in one call
+crop_nii, bbox = detect_and_crop("t2.nii.gz")  # detect + crop in one call
 ```
 
 ---
@@ -159,9 +159,9 @@ PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
            pad_anterior=15, pad_posterior=15)
 
 for subject in subjects:
-    ctx        = detect(subject.image, **PAD)
-    crop_img   = crop(nib.load(subject.image), ctx)
-    crop_label = crop(nib.load(subject.label), ctx)
+    bbox        = detect(subject.image, **PAD)
+    crop_img   = crop(nib.load(subject.image), bbox)
+    crop_label = crop(nib.load(subject.label), bbox)
     nib.save(crop_img,   subject.image_crop)
     nib.save(crop_label, subject.label_crop)
 ```
@@ -181,11 +181,11 @@ import nibabel as nib
 PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
            pad_anterior=15, pad_posterior=15)  # identical to training
 
-ctx      = detect("new_subject.nii.gz", **PAD)
-crop_img = crop(nib.load("new_subject.nii.gz"), ctx)
+bbox      = detect("new_subject.nii.gz", **PAD)
+crop_img = crop(nib.load("new_subject.nii.gz"), bbox)
 
 seg_crop = my_model(crop_img)                  # run your segmentation model
-seg_full = restore_segmentation(seg_crop, ctx) # back to original space + affine
+seg_full = restore_segmentation(seg_crop, bbox) # back to original space + affine
 nib.save(seg_full, "new_subject_seg.nii.gz")
 ```
 
@@ -205,9 +205,9 @@ PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
            pad_anterior=15, pad_posterior=15)
 
 for subject in subjects:
-    ctx   = detect(subject.image, **PAD)                             # detect once
-    nib.save(crop(nib.load(subject.image), ctx), subject.image_crop) # same bbox
-    nib.save(crop(nib.load(subject.label), ctx), subject.label_crop) # same bbox
+    bbox   = detect(subject.image, **PAD)                             # detect once
+    nib.save(crop(nib.load(subject.image), bbox), subject.image_crop) # same bbox
+    nib.save(crop(nib.load(subject.label), bbox), subject.label_crop) # same bbox
 ```
 
 **Training:** run `nnUNetv2_plan_and_preprocess` and `nnUNetv2_train` on the cropped dataset as usual.
@@ -221,14 +221,14 @@ import nibabel as nib
 PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
            pad_anterior=15, pad_posterior=15)  # same as training
 
-ctx      = detect("new_subject.nii.gz", **PAD)
-crop_img = crop(nib.load("new_subject.nii.gz"), ctx)
+bbox      = detect("new_subject.nii.gz", **PAD)
+crop_img = crop(nib.load("new_subject.nii.gz"), bbox)
 nib.save(crop_img, "new_subject_crop.nii.gz")
 
 # Run nnUNet predictor on the cropped image
 # nnUNetv2_predict -i new_subject_crop.nii.gz -o seg_crop/ ...
 
-seg_full = restore_segmentation(nib.load("seg_crop/new_subject_crop.nii.gz"), ctx)
+seg_full = restore_segmentation(nib.load("seg_crop/new_subject_crop.nii.gz"), bbox)
 nib.save(seg_full, "new_subject_seg.nii.gz")
 ```
 

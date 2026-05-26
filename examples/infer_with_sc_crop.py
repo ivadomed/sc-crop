@@ -81,7 +81,7 @@ def infer(input_path: str, output_path: str) -> None:
     Step 4 — Reorient segmentation back and restore to the full image space.
     """
     # Step 1
-    crop_nii, ctx        = detect_and_crop(input_path)
+    crop_nii, bbox        = detect_and_crop(input_path)
     original_orientation = io_orientation(crop_nii.affine)
 
     # Step 2
@@ -92,7 +92,7 @@ def infer(input_path: str, output_path: str) -> None:
 
     # Step 4
     seg_crop = reorient_back(seg_rpi, original_orientation)
-    seg_full = restore_segmentation(seg_crop, ctx)
+    seg_full = restore_segmentation(seg_crop, bbox)
 
     nib.save(seg_full, output_path)
 

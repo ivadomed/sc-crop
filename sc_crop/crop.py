@@ -2,10 +2,10 @@
 Core logic for spinal cord detection and bounding box computation.
 
 Public API (pure — no file I/O):
-    detect(img_path, ...)              → ctx dict     — detect SC bbox
-    crop(img, ctx)                     → NIfTI        — crop any volume with the same bbox
-    detect_and_crop(img_path, ...)     → (NIfTI, ctx) — convenience: detect + crop in one call
-    restore_segmentation(seg, ctx)     → NIfTI        — restore segmentation to original space
+    detect(img_path, ...)              → bbox dict     — detect SC bbox
+    crop(img, bbox)                     → NIfTI        — crop any volume with the same bbox
+    detect_and_crop(img_path, ...)     → (NIfTI, bbox) — convenience: detect + crop in one call
+    restore_segmentation(seg, bbox)     → NIfTI        — restore segmentation to original space
 
 The context dict returned by detect() contains:
     xmin, xmax, ymin, ymax, zmin, zmax  — inclusive bbox in native voxel space
@@ -41,14 +41,14 @@ Usage:
     from sc_crop import detect, crop
     import nibabel as nib
 
-    ctx        = detect("t2.nii.gz")
-    crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
-    crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
+    bbox        = detect("t2.nii.gz")
+    crop_img   = crop(nib.load("t2.nii.gz"),       bbox)
+    crop_label = crop(nib.load("t2_label.nii.gz"), bbox)
 
-    ctx = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
-    ctx = detect("t2.nii.gz", pad_si=30)                    # symmetric SI
-    ctx = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # shorthand + override
-    ctx = detect("t2.nii.gz", use_onnx=False, device="cuda") # GPU inference (.pt only)
+    bbox = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
+    bbox = detect("t2.nii.gz", pad_si=30)                    # symmetric SI
+    bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # shorthand + override
+    bbox = detect("t2.nii.gz", use_onnx=False, device="cuda") # GPU inference (.pt only)
 """
 
 from __future__ import annotations
@@ -609,7 +609,7 @@ def detect(img_path: str,
         time_steps:     Print elapsed time for each pipeline step.
 
     Returns:
-        ctx dict with:
+        bbox dict with:
           xmin, xmax, ymin, ymax, zmin, zmax — inclusive bbox in native voxel space
           original_axcodes                   — e.g. "RAS", "LPI"
           _original_img, _img_las, _bbox_pad_las, _original_ornt  (private keys)
@@ -619,14 +619,14 @@ def detect(img_path: str,
         from sc_crop import detect, crop
         import nibabel as nib
 
-        ctx        = detect("t2.nii.gz")
-        crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
-        crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
+        bbox        = detect("t2.nii.gz")
+        crop_img   = crop(nib.load("t2.nii.gz"),       bbox)
+        crop_label = crop(nib.load("t2_label.nii.gz"), bbox)
 
         # Custom padding:
-        ctx = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
-        ctx = detect("t2.nii.gz", pad_si=30)                    # symmetric SI
-        ctx = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # shorthand + override
+        bbox = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
+        bbox = detect("t2.nii.gz", pad_si=30)                    # symmetric SI
+        bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # shorthand + override
     """
     import time as _time
 
@@ -758,7 +758,7 @@ def detect(img_path: str,
 # ─── High-level inference helpers ─────────────────────────────────────────────
 
 
-def crop(img: "nib.Nifti1Image", ctx: dict, translate: bool = True) -> "nib.Nifti1Image":
+def crop(img: "nib.Nifti1Image", bbox: dict, translate: bool = True) -> "nib.Nifti1Image":
     """Crop a NIfTI image to the bbox detected by detect().
 
     Works for any volume in the same space as the image passed to detect() —
@@ -766,7 +766,7 @@ def crop(img: "nib.Nifti1Image", ctx: dict, translate: bool = True) -> "nib.Nift
 
     Args:
         img:       NIfTI image to crop.
-        ctx:       Context dict returned by detect() or detect_and_crop().
+        bbox:       Context dict returned by detect() or detect_and_crop().
         translate: If True (default), update the affine so the crop sits at the
                    correct world position (required for FSLeyes overlay).
 
@@ -778,13 +778,13 @@ def crop(img: "nib.Nifti1Image", ctx: dict, translate: bool = True) -> "nib.Nift
         from sc_crop import detect, crop
         import nibabel as nib
 
-        ctx        = detect("t2.nii.gz")
-        crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
-        crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
+        bbox        = detect("t2.nii.gz")
+        crop_img   = crop(nib.load("t2.nii.gz"),       bbox)
+        crop_label = crop(nib.load("t2_label.nii.gz"), bbox)
     """
-    xmin, xmax = ctx["xmin"], ctx["xmax"]
-    ymin, ymax = ctx["ymin"], ctx["ymax"]
-    zmin, zmax = ctx["zmin"], ctx["zmax"]
+    xmin, xmax = bbox["xmin"], bbox["xmax"]
+    ymin, ymax = bbox["ymin"], bbox["ymax"]
+    zmin, zmax = bbox["zmin"], bbox["zmax"]
 
     data   = np.asarray(img.dataobj)
     affine = img.affine.copy()
@@ -802,21 +802,21 @@ def detect_and_crop(img_path, **kwargs) -> tuple:
 
     Equivalent to::
 
-        ctx = detect(img_path, **kwargs)
-        return crop(nib.load(img_path), ctx), ctx
+        bbox = detect(img_path, **kwargs)
+        return crop(nib.load(img_path), bbox), bbox
 
     Use detect() + crop() directly when you need to crop multiple volumes
     (image + label) with the same bbox.
 
     Returns:
-        (crop_nii, ctx) where crop_nii is the cropped image and ctx is passed
+        (crop_nii, bbox) where crop_nii is the cropped image and bbox is passed
         to crop() or restore_segmentation().
     """
-    ctx = detect(img_path, **kwargs)
-    return crop(ctx["_original_img"], ctx), ctx
+    bbox = detect(img_path, **kwargs)
+    return crop(bbox["_original_img"], bbox), bbox
 
 
-def restore_segmentation(seg_nii, ctx) -> "nib.Nifti1Image":
+def restore_segmentation(seg_nii, bbox) -> "nib.Nifti1Image":
     """Place a segmentation (cropped space) back into the full original image space.
 
     The segmentation must be in the same orientation as the original image.
@@ -825,16 +825,16 @@ def restore_segmentation(seg_nii, ctx) -> "nib.Nifti1Image":
 
     Args:
         seg_nii: Binary segmentation NIfTI in cropped space (original orientation).
-        ctx:     Context dict returned by detect_and_crop().
+        bbox:     Context dict returned by detect_and_crop().
 
     Returns:
         nib.Nifti1Image with segmentation padded to the full original image space,
         using the original affine and header.
     """
-    original_img = ctx["_original_img"]
-    xmin, xmax   = ctx["xmin"], ctx["xmax"]
-    ymin, ymax   = ctx["ymin"], ctx["ymax"]
-    zmin, zmax   = ctx["zmin"], ctx["zmax"]
+    original_img = bbox["_original_img"]
+    xmin, xmax   = bbox["xmin"], bbox["xmax"]
+    ymin, ymax   = bbox["ymin"], bbox["ymax"]
+    zmin, zmax   = bbox["zmin"], bbox["zmax"]
 
     full    = np.zeros(original_img.shape[:3], dtype=np.uint8)
     seg_arr = np.asarray(seg_nii.dataobj).astype(np.uint8)
