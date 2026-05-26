@@ -16,7 +16,16 @@ Works on both **MRI and CT**, across contrasts (T1, T2, MP2RAGE, DWI…), field 
 
 ## Install
 
+Into an existing environment:
+
 ```bash
+pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.5
+```
+
+Or into a fresh dedicated environment (recommended for testing):
+
+```bash
+conda create -n sc_crop python=3.12 && conda activate sc_crop
 pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.5
 ```
 
