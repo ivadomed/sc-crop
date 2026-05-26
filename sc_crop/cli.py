@@ -20,15 +20,6 @@ from .crop import run
 from .download import download
 
 
-def _parse_padding(value):
-    """Parse padding argument: either single float or 'left right' tuple."""
-    if isinstance(value, str) and " " in value:
-        parts = value.split()
-        if len(parts) == 2:
-            return tuple(float(p) for p in parts)
-    return float(value)
-
-
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "download":
         download()
@@ -43,23 +34,19 @@ def main():
         description="Detect spinal cord and output crop indices. Optionally crop the volume.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-output (default):
-  <stem>_bbox.txt  — inclusive voxel indices in native image space:
-                     xmin xmax ymin ymax zmin zmax
-                     compatible with SCT's ImageCropper:
-                       from spinalcordtoolbox.cropping import ImageCropper
-                       from spinalcordtoolbox.image import Image
-                       c = ImageCropper(Image("t2.nii.gz"))
-                       c.get_bbox_from_minmax(xmin, xmax, ymin, ymax, zmin, zmax)
-                       img_crop = c.crop()
+output:
+  <stem>_bbox.txt  — inclusive voxel indices in native image space (xmin xmax ymin ymax zmin zmax)
+  <stem>_crop.nii.gz  — cropped volume (only with --crop)
 
 examples:
-  sc_crop t2.nii.gz                          # bbox txt only (native space)
-  sc_crop t2.nii.gz --crop                   # + t2_crop.nii.gz (native)
-  sc_crop t2.nii.gz --crop --las             # + t2_crop_las.nii.gz
-  sc_crop t2.nii.gz --crop                   # + t2_crop.nii.gz (affine updated by default)
-  sc_crop t2.nii.gz --crop --no-translate    # affine NOT updated
-  sc_crop t2.nii.gz --crop --las             # LAS crop with correct affine
+  sc_crop t2.nii.gz                                # bbox txt only
+  sc_crop t2.nii.gz --crop                         # + cropped volume (native orientation)
+  sc_crop t2.nii.gz --crop --las                   # + cropped volume in LAS orientation
+  sc_crop t2.nii.gz --crop -o my_crop.nii.gz       # explicit output path
+  sc_crop t2.nii.gz --crop --no-translate          # affine NOT updated (no FSLeyes overlay)
+  sc_crop t2.nii.gz --crop --pad-sup 50 --pad-inf 80   # custom SI padding
+  sc_crop t2.nii.gz --crop --pad-si 30            # symmetric SI padding
+  sc_crop t2.nii.gz --crop --time                 # print elapsed time per step
 """,
     )
     parser.add_argument("input", nargs="?",
@@ -77,12 +64,25 @@ examples:
     parser.add_argument("--no-translate", dest="translate", action="store_false",
                         help="Do not update affine (by default affine is updated for correct FSLeyes overlay)")
     parser.set_defaults(translate=True)
-    parser.add_argument("--padding-rl", type=str, default="10.0",
-                        help="Padding in Right-Left direction (mm). Single value (symmetric) or 'left right' (per face)")
-    parser.add_argument("--padding-ap", type=str, default="15.0",
-                        help="Padding in Anterior-Posterior direction (mm). Single value (symmetric) or 'anterior posterior' (per face)")
-    parser.add_argument("--padding-si", type=str, default="30 20",
-                        help="Padding in Superior-Inferior direction (mm). Single value (symmetric) or 'superior inferior' (per face)")
+    pad = parser.add_argument_group("padding (mm) — individual > shorthand > default")
+    pad.add_argument("--pad-sup",  type=float, default=None, dest="pad_superior",
+                     metavar="MM", help="Superior padding mm (default 40)")
+    pad.add_argument("--pad-inf",  type=float, default=None, dest="pad_inferior",
+                     metavar="MM", help="Inferior padding mm (default 60)")
+    pad.add_argument("--pad-si",   type=float, default=None, dest="pad_si",
+                     metavar="MM", help="Symmetric SI shorthand — overridden by --pad-sup/inf")
+    pad.add_argument("--pad-left", type=float, default=None, dest="pad_left",
+                     metavar="MM", help="Left padding mm (default 10)")
+    pad.add_argument("--pad-right",type=float, default=None, dest="pad_right",
+                     metavar="MM", help="Right padding mm (default 10)")
+    pad.add_argument("--pad-rl",   type=float, default=None, dest="pad_rl",
+                     metavar="MM", help="Symmetric RL shorthand — overridden by --pad-left/right")
+    pad.add_argument("--pad-ant",  type=float, default=None, dest="pad_anterior",
+                     metavar="MM", help="Anterior padding mm (default 15)")
+    pad.add_argument("--pad-post", type=float, default=None, dest="pad_posterior",
+                     metavar="MM", help="Posterior padding mm (default 15)")
+    pad.add_argument("--pad-ap",   type=float, default=None, dest="pad_ap",
+                     metavar="MM", help="Symmetric AP shorthand — overridden by --pad-ant/post")
     parser.add_argument("--conf", type=float, default=None,
                         help="Detection confidence threshold (default: from config.yaml)")
     parser.add_argument("--regularization", default=None, choices=["cls", "graphtrim", "none"],
@@ -108,13 +108,19 @@ examples:
         parser.error("an input file is required (positional or -i)")
 
     result = run(
-        input_path     = input_path,
-        output_path    = args.output,
-        model_path     = args.model,
-        padding_rl_mm  = _parse_padding(args.padding_rl),
-        padding_ap_mm  = _parse_padding(args.padding_ap),
-        padding_si_mm  = _parse_padding(args.padding_si),
-        conf           = args.conf,
+        input_path    = input_path,
+        output_path   = args.output,
+        model_path    = args.model,
+        pad_superior  = args.pad_superior,
+        pad_inferior  = args.pad_inferior,
+        pad_si        = args.pad_si,
+        pad_left      = args.pad_left,
+        pad_right     = args.pad_right,
+        pad_rl        = args.pad_rl,
+        pad_anterior  = args.pad_anterior,
+        pad_posterior = args.pad_posterior,
+        pad_ap        = args.pad_ap,
+        conf          = args.conf,
         regularization = args.regularization,
         cls_conf       = args.cls_conf,
         device         = args.device,

@@ -22,9 +22,19 @@ Normalisation (--norm-scope):
                     intensity across slices — matches the training pipeline default.
   slice:            percentiles computed independently per slice (legacy behaviour).
 
+Padding API (9 parameters, priority: individual > shorthand > default):
+  Individual (per face):  pad_superior, pad_inferior, pad_left, pad_right, pad_anterior, pad_posterior
+  Shorthands (symmetric): pad_si  (= superior + inferior),
+                          pad_rl  (= left + right),
+                          pad_ap  (= anterior + posterior)
+  Defaults: superior=40mm, inferior=60mm, left=right=10mm, anterior=posterior=15mm.
+
 Usage:
     from sc_crop.crop import run
     result = run("t2.nii.gz")                              # ONNX + cls regularization (default)
+    result = run("t2.nii.gz", pad_superior=50, pad_inferior=80)
+    result = run("t2.nii.gz", pad_si=30)                   # symmetric SI
+    result = run("t2.nii.gz", pad_si=30, pad_inferior=60)  # shorthand + override
     result = run("t2.nii.gz", use_onnx=False)             # PyTorch .pt inference
     result = run("t2.nii.gz", regularization="graphtrim")  # graphtrim regularization
     result = run("t2.nii.gz", regularization="none")       # no regularization
@@ -60,31 +70,29 @@ def load_config() -> dict:
 
 # ─── BBox3D: single source of truth for voxel bboxes in LAS index space ──────
 
-Pair = tuple[float, float]
+_DEFAULT_PAD_SUPERIOR = 40.0
+_DEFAULT_PAD_INFERIOR = 60.0
+_DEFAULT_PAD_RL       = 10.0
+_DEFAULT_PAD_AP       = 15.0
 
 
-def _as_pair(p, default: float = 0.0) -> Pair:
-    """Normalize to (a, b). 'default' sentinel keeps that face's axis default value.
+def _resolve_padding(
+    pad_si=None, pad_superior=None, pad_inferior=None,
+    pad_rl=None, pad_left=None,     pad_right=None,
+    pad_ap=None, pad_anterior=None, pad_posterior=None,
+) -> tuple:
+    """Resolve 9 padding inputs to 6 face scalars (mm).
 
-    Accepted forms:
-        10.0                      → (10.0, 10.0)
-        (30, 20)                  → (30.0, 20.0)
-        ('default', 50)           → (default, 50.0)
-        (30, 'default')           → (30.0, default)
-        '30 20'                   → (30.0, 20.0)          # CLI string
-        'default 50'              → (default, 50.0)       # CLI string
+    Priority per face: individual > shorthand > default.
+    Returns (left, right, anterior, posterior, superior, inferior).
     """
-    def _resolve(v: object) -> float:
-        return default if (isinstance(v, str) and v.strip().lower() == "default") else float(v)
-
-    if isinstance(p, (int, float)):
-        return (float(p), float(p))
-    if isinstance(p, str):
-        parts = p.split()
-        if len(parts) == 2:
-            return (_resolve(parts[0]), _resolve(parts[1]))
-        return (_resolve(p), _resolve(p))
-    return (_resolve(p[0]), _resolve(p[1]))
+    sup  = pad_superior  if pad_superior  is not None else (pad_si if pad_si is not None else _DEFAULT_PAD_SUPERIOR)
+    inf  = pad_inferior  if pad_inferior  is not None else (pad_si if pad_si is not None else _DEFAULT_PAD_INFERIOR)
+    left = pad_left      if pad_left      is not None else (pad_rl if pad_rl is not None else _DEFAULT_PAD_RL)
+    right= pad_right     if pad_right     is not None else (pad_rl if pad_rl is not None else _DEFAULT_PAD_RL)
+    ant  = pad_anterior  if pad_anterior  is not None else (pad_ap if pad_ap is not None else _DEFAULT_PAD_AP)
+    post = pad_posterior if pad_posterior is not None else (pad_ap if pad_ap is not None else _DEFAULT_PAD_AP)
+    return left, right, ant, post, sup, inf
 
 
 @dataclass(frozen=True)
@@ -101,25 +109,28 @@ class BBox3D:
         return (self.rl1, self.rl2, self.ap1, self.ap2, self.z1, self.z2)
 
     def pad(self,
-            pad_rl: Pair, pad_ap: Pair, pad_si: Pair,
+            left: float, right: float,
+            anterior: float, posterior: float,
+            superior: float, inferior: float,
             zooms: tuple[float, float, float],
             shape: tuple[int, int, int]) -> "BBox3D":
         """Return a new BBox3D padded in mm (per face), clamped to image bounds.
 
-        LAS convention:
-          - RL: Left (0) to Right (max)     → pad_rl = (left_mm, right_mm)
-          - AP: Anterior (0) to Posterior   → pad_ap = (anterior_mm, posterior_mm)
-          - SI: Superior (0) to Inferior    → pad_si = (superior_mm, inferior_mm)
+        All six arguments are scalars in mm. Use _resolve_padding() to produce them
+        from the public 9-parameter API.
+
+        LAS convention: rl1=Left, rl2=Right, ap1=Anterior, ap2=Posterior,
+                        z1=Superior, z2=Inferior.
         """
         rl_mm, ap_mm, si_mm = zooms
         RL, AP, Z = shape
         return BBox3D(
-            rl1=max(0,  self.rl1 - int(np.ceil(pad_rl[0] / rl_mm))),
-            rl2=min(RL, self.rl2 + int(np.ceil(pad_rl[1] / rl_mm))),
-            ap1=max(0,  self.ap1 - int(np.ceil(pad_ap[0] / ap_mm))),
-            ap2=min(AP, self.ap2 + int(np.ceil(pad_ap[1] / ap_mm))),
-            z1=max(0,   self.z1  - int(np.ceil(pad_si[0] / si_mm))),
-            z2=min(Z,   self.z2  + int(np.ceil(pad_si[1] / si_mm))),
+            rl1=max(0,  self.rl1 - int(np.ceil(left     / rl_mm))),
+            rl2=min(RL, self.rl2 + int(np.ceil(right    / rl_mm))),
+            ap1=max(0,  self.ap1 - int(np.ceil(anterior / ap_mm))),
+            ap2=min(AP, self.ap2 + int(np.ceil(posterior/ ap_mm))),
+            z1=max(0,   self.z1  - int(np.ceil(superior / si_mm))),
+            z2=min(Z,   self.z2  + int(np.ceil(inferior / si_mm))),
         )
 
     def to_mm(self, img: nib.Nifti1Image) -> tuple[np.ndarray, np.ndarray]:
@@ -546,9 +557,15 @@ def run(input_path: str,
         config: dict | None = None,
         output_path: str | None = None,
         model_path: str | None = None,
-        padding_rl_mm: float | tuple = 10.0,
-        padding_ap_mm: float | tuple = 15.0,
-        padding_si_mm: float | tuple = 20.0,
+        pad_superior: float | None = None,
+        pad_inferior: float | None = None,
+        pad_left: float | None = None,
+        pad_right: float | None = None,
+        pad_anterior: float | None = None,
+        pad_posterior: float | None = None,
+        pad_si: float | None = None,
+        pad_rl: float | None = None,
+        pad_ap: float | None = None,
         conf: float | None = None,
         regularization: str | None = None,
         cls_conf: float | None = None,
@@ -562,6 +579,10 @@ def run(input_path: str,
         time_steps: bool = False) -> dict:
     """Full pipeline: load → LAS → resample → infer → regularize → bbox 3D → save.
 
+    Padding (priority: individual > shorthand > default):
+      Individual: pad_superior(40), pad_inferior(60), pad_left(10), pad_right(10),
+                  pad_anterior(15), pad_posterior(15)
+      Shorthand:  pad_si (= superior + inferior), pad_rl (= left + right), pad_ap (= ant + post)
     use_onnx:       True (default) — ONNX Runtime inference (CPU, no ultralytics overhead).
                     False — PyTorch .pt inference via ultralytics (supports --device cuda/mps).
     regularization: "cls" (default), "graphtrim", or "none".
@@ -590,9 +611,11 @@ def run(input_path: str,
     regularization = regularization if regularization is not None else config.get("regularization", "cls")
     cls_conf      = cls_conf      if cls_conf      is not None else config.get("cls_conf", 0.5)
 
-    pad_rl = _as_pair(padding_rl_mm, default=10.0)
-    pad_ap = _as_pair(padding_ap_mm, default=15.0)
-    pad_si = _as_pair(padding_si_mm, default=20.0)
+    pad_left, pad_right, pad_anterior, pad_posterior, pad_superior, pad_inferior = _resolve_padding(
+        pad_si=pad_si, pad_superior=pad_superior, pad_inferior=pad_inferior,
+        pad_rl=pad_rl, pad_left=pad_left,         pad_right=pad_right,
+        pad_ap=pad_ap, pad_anterior=pad_anterior, pad_posterior=pad_posterior,
+    )
 
     img              = nib.load(input_path)
     original_ornt    = nib.io_orientation(img.affine)
@@ -658,7 +681,10 @@ def run(input_path: str,
         bbox_pad_for_debug = None
         if preds:
             bbox_for_debug     = aggregate_bbox_3d(preds, shape[0], shape[1], shape[2], si_zoom)
-            bbox_pad_for_debug = bbox_for_debug.pad(pad_rl, pad_ap, pad_si, zooms, shape)
+            bbox_pad_for_debug = bbox_for_debug.pad(
+                pad_left, pad_right, pad_anterior, pad_posterior,
+                pad_superior, pad_inferior, zooms, shape,
+            )
         save_debug_panel(det_pt, slices, las_idxs, conf,
                          str(parent / f"{stem}_debug.png"),
                          padded_bbox=bbox_pad_for_debug, H=shape[1], W=shape[0])
@@ -668,7 +694,8 @@ def run(input_path: str,
         raise RuntimeError("No spinal cord detected — check the volume or lower --conf")
 
     bbox          = aggregate_bbox_3d(preds, shape[0], shape[1], shape[2], si_zoom)
-    bbox_pad      = bbox.pad(pad_rl, pad_ap, pad_si, zooms, shape)
+    bbox_pad      = bbox.pad(pad_left, pad_right, pad_anterior, pad_posterior,
+                             pad_superior, pad_inferior, zooms, shape)
     bbox_pad_orig, _ = bbox_pad.reorient(shape, las_ornt, original_ornt)
     t0 = _tick("bbox aggregation", t0)
 
@@ -718,7 +745,8 @@ def detect(img_path, **kwargs) -> dict:
 
     Args:
         img_path: Path to the input NIfTI image (any orientation, any contrast).
-        **kwargs: Forwarded to run() — padding_rl_mm, padding_ap_mm, padding_si_mm,
+        **kwargs: Forwarded to run() — pad_superior, pad_inferior, pad_left, pad_right,
+                  pad_anterior, pad_posterior, pad_si, pad_rl, pad_ap,
                   conf, cls_conf, regularization, device, use_onnx, norm_scope.
 
     Returns:
@@ -730,7 +758,7 @@ def detect(img_path, **kwargs) -> dict:
         from sc_crop import detect, crop, restore_segmentation
         import nibabel as nib
 
-        ctx        = detect("t2.nii.gz", padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+        ctx        = detect("t2.nii.gz", pad_rl=10, pad_ap=15, pad_superior=40, pad_inferior=60)
         crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
         crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
 
@@ -759,7 +787,7 @@ def crop(img: "nib.Nifti1Image", ctx: dict) -> "nib.Nifti1Image":
         from sc_crop import detect, crop
         import nibabel as nib
 
-        ctx        = detect("t2.nii.gz", padding_rl_mm=10, padding_ap_mm=15, padding_si_mm=(30, 30))
+        ctx        = detect("t2.nii.gz", pad_rl=10, pad_ap=15, pad_superior=40, pad_inferior=60)
         crop_img   = crop(nib.load("t2.nii.gz"),       ctx)
         crop_label = crop(nib.load("t2_label.nii.gz"), ctx)
     """

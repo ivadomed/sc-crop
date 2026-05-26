@@ -48,6 +48,7 @@ from tqdm import tqdm
 
 from .crop import (
     BBox3D,
+    _resolve_padding,
     aggregate_bbox_3d,
     build_slices,
     load_config,
@@ -167,8 +168,11 @@ def _crop_and_save(
 
     RL, AP, Z   = meta.shape_las
     bbox_las    = aggregate_bbox_3d(preds, RL, AP, Z, meta.si_zoom)
-    pad         = (pad_left, pad_right), (pad_anterior, pad_posterior), (pad_superior, pad_inferior)
-    bbox_padded = bbox_las.pad(*pad, zooms=meta.zooms_las, shape=meta.shape_las)
+    bbox_padded = bbox_las.pad(
+        pad_left, pad_right, pad_anterior, pad_posterior,
+        pad_superior, pad_inferior,
+        zooms=meta.zooms_las, shape=meta.shape_las,
+    )
 
     rpi_ornt          = axcodes2ornt(("R", "P", "I"))
     bbox_rpi, _       = bbox_padded.reorient(meta.shape_las, meta.las_ornt, rpi_ornt)
@@ -277,39 +281,52 @@ def preprocess_dataset(
     device: str = "cuda",
     batch_size: int = 64,
     workers: Optional[int] = None,
-    pad_left: float = 20.0,
-    pad_right: float = 20.0,
-    pad_anterior: float = 30.0,
-    pad_posterior: float = 30.0,
-    pad_superior: float = 40.0,
-    pad_inferior: float = 40.0,
+    pad_superior: Optional[float] = None,
+    pad_inferior: Optional[float] = None,
+    pad_left: Optional[float] = None,
+    pad_right: Optional[float] = None,
+    pad_anterior: Optional[float] = None,
+    pad_posterior: Optional[float] = None,
+    pad_si: Optional[float] = None,
+    pad_rl: Optional[float] = None,
+    pad_ap: Optional[float] = None,
     conf: float = 0.1,
     cls_conf: float = 0.5,
     skip_failed: bool = False,
 ) -> Path:
     """Crop a nnUNet dataset using sc_crop detection. Returns the output dataset path.
 
+    Padding (priority: individual > shorthand > default):
+      Individual: pad_superior(40), pad_inferior(60), pad_left(10), pad_right(10),
+                  pad_anterior(15), pad_posterior(15).
+      Shorthand:  pad_si (= superior + inferior), pad_rl (= left + right),
+                  pad_ap (= anterior + posterior).
+
     Args:
-        output_dir:    Parent directory where the output dataset folder is created.
-        dataset_dir:   Existing nnUNet raw dataset (imagesTr/labelsTr/imagesTs/labelsTs).
-        datalist_dir:  Folder of MSD JSON datalists (*_seed50.json). Mutually exclusive
-                       with dataset_dir.
-        taskname:      nnUNet dataset name suffix.
-        tasknumber:    nnUNet dataset number.
-        device:        "cuda" or "cpu" for YOLO inference.
-        batch_size:    Number of 2D slices per GPU batch (cross-volume).
-        workers:       CPU threads for parallel load/save (default: min(8, cpu_count)).
-        pad_left/right/anterior/posterior/superior/inferior:
-                       Per-face padding in mm added around the detected bbox.
-        conf:          YOLO detection confidence threshold.
-        cls_conf:      Classifier confidence threshold.
-        skip_failed:   If True, skip volumes where detection fails; else raise.
+        output_dir:   Parent directory where the output dataset folder is created.
+        dataset_dir:  Existing nnUNet raw dataset (imagesTr/labelsTr/imagesTs/labelsTs).
+        datalist_dir: Folder of MSD JSON datalists (*_seed50.json). Mutually exclusive
+                      with dataset_dir.
+        taskname:     nnUNet dataset name suffix.
+        tasknumber:   nnUNet dataset number.
+        device:       "cuda" or "cpu" for YOLO inference.
+        batch_size:   Number of 2D slices per GPU batch (cross-volume).
+        workers:      CPU threads for parallel load/save (default: min(8, cpu_count)).
+        conf:         YOLO detection confidence threshold.
+        cls_conf:     Classifier confidence threshold.
+        skip_failed:  If True, skip volumes where detection fails; else raise.
 
     Returns:
         Path to the created dataset directory.
     """
     if (dataset_dir is None) == (datalist_dir is None):
         raise ValueError("Provide exactly one of dataset_dir or datalist_dir.")
+
+    pad_left_r, pad_right_r, pad_ant_r, pad_post_r, pad_sup_r, pad_inf_r = _resolve_padding(
+        pad_si=pad_si, pad_superior=pad_superior, pad_inferior=pad_inferior,
+        pad_rl=pad_rl, pad_left=pad_left,         pad_right=pad_right,
+        pad_ap=pad_ap, pad_anterior=pad_anterior, pad_posterior=pad_posterior,
+    )
 
     if workers is None:
         workers = min(8, os.cpu_count() or 1)
@@ -356,8 +373,8 @@ def preprocess_dataset(
                 todo, raw_preds,
                 [out_imgs[m.vol_id - id_offset] for m in todo],
                 [out_lbls[m.vol_id - id_offset] for m in todo],
-                pad_left, pad_right, pad_anterior, pad_posterior,
-                pad_superior, pad_inferior, workers, skip_failed,
+                pad_left_r, pad_right_r, pad_ant_r, pad_post_r,
+                pad_sup_r, pad_inf_r, workers, skip_failed,
             )
 
         return [
@@ -382,12 +399,12 @@ def preprocess_dataset(
         "training":          tr_results,
         "test":              ts_results,
         "sc_crop_params": {
-            "pad_left_mm":      pad_left,
-            "pad_right_mm":     pad_right,
-            "pad_anterior_mm":  pad_anterior,
-            "pad_posterior_mm": pad_posterior,
-            "pad_superior_mm":  pad_superior,
-            "pad_inferior_mm":  pad_inferior,
+            "pad_left_mm":      pad_left_r,
+            "pad_right_mm":     pad_right_r,
+            "pad_anterior_mm":  pad_ant_r,
+            "pad_posterior_mm": pad_post_r,
+            "pad_superior_mm":  pad_sup_r,
+            "pad_inferior_mm":  pad_inf_r,
             "conf":             conf,
             "device":           device,
         },
@@ -421,12 +438,15 @@ def _parse_args(argv=None):
                    help="Number of 2D slices per GPU batch (cross-volume)")
     p.add_argument("--workers",       type=int,   default=None,
                    help="CPU workers for parallel load/save (default: min(8, cpu_count))")
-    p.add_argument("--pad-left",      type=float, default=20.0, help="Left padding mm")
-    p.add_argument("--pad-right",     type=float, default=20.0, help="Right padding mm")
-    p.add_argument("--pad-anterior",  type=float, default=30.0, help="Anterior padding mm")
-    p.add_argument("--pad-posterior", type=float, default=30.0, help="Posterior padding mm")
-    p.add_argument("--pad-superior",  type=float, default=40.0, help="Superior padding mm")
-    p.add_argument("--pad-inferior",  type=float, default=40.0, help="Inferior padding mm")
+    p.add_argument("--pad-sup",  type=float, default=None, dest="pad_superior",  metavar="MM", help="Superior padding mm (default 40)")
+    p.add_argument("--pad-inf",  type=float, default=None, dest="pad_inferior",  metavar="MM", help="Inferior padding mm (default 60)")
+    p.add_argument("--pad-si",   type=float, default=None, dest="pad_si",        metavar="MM", help="Symmetric SI shorthand")
+    p.add_argument("--pad-left", type=float, default=None, dest="pad_left",      metavar="MM", help="Left padding mm (default 10)")
+    p.add_argument("--pad-right",type=float, default=None, dest="pad_right",     metavar="MM", help="Right padding mm (default 10)")
+    p.add_argument("--pad-rl",   type=float, default=None, dest="pad_rl",        metavar="MM", help="Symmetric RL shorthand")
+    p.add_argument("--pad-ant",  type=float, default=None, dest="pad_anterior",  metavar="MM", help="Anterior padding mm (default 15)")
+    p.add_argument("--pad-post", type=float, default=None, dest="pad_posterior", metavar="MM", help="Posterior padding mm (default 15)")
+    p.add_argument("--pad-ap",   type=float, default=None, dest="pad_ap",        metavar="MM", help="Symmetric AP shorthand")
     p.add_argument("--conf",          type=float, default=0.1,  help="YOLO detection confidence")
     p.add_argument("--cls-conf",      type=float, default=0.5,  help="Classifier confidence")
     p.add_argument("--skip-failed",   action="store_true",
@@ -445,12 +465,15 @@ def main(argv=None):
         device        = args.device,
         batch_size    = args.batch_size,
         workers       = args.workers,
-        pad_left      = args.pad_left,
-        pad_right     = args.pad_right,
-        pad_anterior  = args.pad_anterior,
-        pad_posterior = args.pad_posterior,
         pad_superior  = args.pad_superior,
         pad_inferior  = args.pad_inferior,
+        pad_si        = args.pad_si,
+        pad_left      = args.pad_left,
+        pad_right     = args.pad_right,
+        pad_rl        = args.pad_rl,
+        pad_anterior  = args.pad_anterior,
+        pad_posterior = args.pad_posterior,
+        pad_ap        = args.pad_ap,
         conf          = args.conf,
         cls_conf      = args.cls_conf,
         skip_failed   = args.skip_failed,

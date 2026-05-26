@@ -5,3 +5,5 @@ dist/
 build/
 *.pt
 *.onnx
+sc_crop/models/*.zip
+bench_preprocessing.py
