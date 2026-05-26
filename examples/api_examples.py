@@ -5,22 +5,47 @@ Shows all major usage patterns for the Python API, from the simplest
 to the most advanced. Each example is self-contained and can be run
 independently by calling it directly.
 
+If no image is provided, the SCT tutorial T2 subject is downloaded
+automatically (~5 MB) and cached in ~/.cache/sc_crop/tutorial/.
+
 Requirements:
     pip install "sc-crop @ git+https://github.com/ivadomed/sc-crop.git"
 
 Usage:
-    python examples/api_examples.py image.nii.gz
-    python examples/api_examples.py image.nii.gz --all     # run all examples
-    python examples/api_examples.py image.nii.gz --ex 3    # run example 3 only
+    python examples/api_examples.py                        # auto-download tutorial data
+    python examples/api_examples.py image.nii.gz           # use your own image
+    python examples/api_examples.py image.nii.gz --ex 3   # run example 3 only
 """
 
 import argparse
+import urllib.request
+import zipfile
 from pathlib import Path
 
 import nibabel as nib
 import numpy as np
 
 from sc_crop import detect, crop, detect_and_crop, restore_segmentation
+
+_TUTORIAL_URL  = "https://github.com/spinalcordtoolbox/sct_tutorial_data/releases/download/r20260508/data_spinalcord-segmentation.zip"
+_TUTORIAL_IMG  = "single_subject/data/t2/t2.nii.gz"
+_TUTORIAL_CACHE = Path.home() / ".cache" / "sc_crop" / "tutorial"
+
+
+def _get_tutorial_image() -> str:
+    """Download and cache the SCT tutorial T2 image. Returns the local path."""
+    out = _TUTORIAL_CACHE / _TUTORIAL_IMG
+    if out.exists():
+        return str(out)
+    print(f"Downloading SCT tutorial data → {_TUTORIAL_CACHE}")
+    _TUTORIAL_CACHE.mkdir(parents=True, exist_ok=True)
+    zip_path = _TUTORIAL_CACHE / "tutorial.zip"
+    urllib.request.urlretrieve(_TUTORIAL_URL, zip_path)
+    with zipfile.ZipFile(zip_path) as z:
+        z.extractall(_TUTORIAL_CACHE)
+    zip_path.unlink()
+    print(f"Cached at {out}\n")
+    return str(out)
 
 
 # ─── Example 1 — Basic: detect + crop ────────────────────────────────────────
@@ -193,18 +218,21 @@ def main():
         description="sc-crop API cookbook — runnable examples",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("input", help="Input NIfTI volume (.nii or .nii.gz)")
+    p.add_argument("input", nargs="?", default=None,
+                   help="Input NIfTI volume (.nii or .nii.gz) — downloads SCT tutorial T2 if omitted")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--all", action="store_true", help="Run all examples (default)")
     g.add_argument("--ex",  type=int, choices=list(EXAMPLES), metavar="N",
                    help=f"Run only example N ({', '.join(str(k) for k in EXAMPLES)})")
     args = p.parse_args()
 
-    print(f"\nsc-crop API examples — {args.input}")
+    img_path = args.input or _get_tutorial_image()
+
+    print(f"\nsc-crop API examples — {img_path}")
     for idx, (label, fn) in EXAMPLES.items():
         if args.ex and args.ex != idx:
             continue
-        fn(args.input)
+        fn(img_path)
 
     print("\n✅  Done.")
 

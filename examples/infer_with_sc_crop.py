@@ -5,7 +5,10 @@ Shows the canonical 4-step pattern for running any segmentation model on
 spinal cord MRI using sc-crop for automatic cropping and space restoration.
 
 Runs out of the box with a built-in fake model (center-cylinder mask) so the
-full pipeline can be tested immediately after installing sc-crop.
+full pipeline can be tested immediately after installing sc-crop. If no input
+is provided, the SCT tutorial T2 subject is downloaded automatically (~5 MB)
+and cached in ~/.cache/sc_crop/tutorial/.
+
 To use a real model, replace fake_sc_segmentation() with your own.
 
 Requirements:
@@ -13,16 +16,40 @@ Requirements:
     # + your model's requirements (nnunetv2, onnxruntime, etc.)
 
 Usage:
+    python examples/infer_with_sc_crop.py                          # auto-download tutorial data
     python examples/infer_with_sc_crop.py -i t2.nii.gz -o seg.nii.gz
 """
 
 import argparse
+import urllib.request
+import zipfile
+from pathlib import Path
 
 import nibabel as nib
 import numpy as np
 from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
 
 from sc_crop import detect_and_crop, restore_segmentation
+
+_TUTORIAL_URL   = "https://github.com/spinalcordtoolbox/sct_tutorial_data/releases/download/r20260508/data_spinalcord-segmentation.zip"
+_TUTORIAL_IMG   = "single_subject/data/t2/t2.nii.gz"
+_TUTORIAL_CACHE = Path.home() / ".cache" / "sc_crop" / "tutorial"
+
+
+def _get_tutorial_image() -> str:
+    """Download and cache the SCT tutorial T2 image. Returns the local path."""
+    out = _TUTORIAL_CACHE / _TUTORIAL_IMG
+    if out.exists():
+        return str(out)
+    print(f"Downloading SCT tutorial data → {_TUTORIAL_CACHE}")
+    _TUTORIAL_CACHE.mkdir(parents=True, exist_ok=True)
+    zip_path = _TUTORIAL_CACHE / "tutorial.zip"
+    urllib.request.urlretrieve(_TUTORIAL_URL, zip_path)
+    with zipfile.ZipFile(zip_path) as z:
+        z.extractall(_TUTORIAL_CACHE)
+    zip_path.unlink()
+    print(f"Cached at {out}\n")
+    return str(out)
 
 
 # ── Orientation helpers ────────────────────────────────────────────────────────
@@ -108,10 +135,15 @@ def main():
         description="Spinal cord segmentation with sc-crop detection.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("-i", required=True, help="Input NIfTI image (.nii or .nii.gz)")
-    p.add_argument("-o", required=True, help="Output segmentation mask (.nii.gz)")
+    p.add_argument("-i", default=None, help="Input NIfTI image — downloads SCT tutorial T2 if omitted")
+    p.add_argument("-o", default=None, help="Output segmentation mask (.nii.gz) — defaults to <input>_seg.nii.gz")
     args = p.parse_args()
-    infer(args.i, args.o)
+
+    input_path = args.i or _get_tutorial_image()
+    output_path = args.o or str(Path(input_path).with_name(
+        Path(input_path).name.replace(".nii.gz", "").replace(".nii", "") + "_seg.nii.gz"
+    ))
+    infer(input_path, output_path)
 
 
 if __name__ == "__main__":
