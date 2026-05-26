@@ -31,15 +31,23 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.5"
 ## CLI
 
 ```bash
-sc_crop t2.nii.gz                          # detect only → t2_bbox.txt
-sc_crop -i t2.nii.gz -o out.nii.gz --crop  # crop → out.nii.gz
+sc_crop t2.nii.gz
+```
 
-# Padding around the detected spinal cord (mm) — defaults: sup=40, inf=60, left=right=10, ant=post=15
+```bash
+sc_crop -i t2.nii.gz -o out.nii.gz --crop
+```
+
+Padding around the detected spinal cord (mm). Defaults: `sup=40, inf=60, left=right=10, ant=post=15`. Clamped to image boundaries. Priority: individual > shorthand > default.
+
+```bash
 sc_crop t2.nii.gz --crop --pad-sup 50 --pad-inf 80 --pad-left 10 --pad-right 10 --pad-ant 15 --pad-post 15
+```
+
+```bash
 sc_crop t2.nii.gz --crop --pad-si 30 --pad-rl 10 --pad-ap 15
 ```
 
-Padding is clamped to image boundaries. Priority per face: individual > shorthand > default.
 Run `sc_crop --help` for all options.
 
 ---
