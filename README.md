@@ -1,6 +1,6 @@
 # sc-crop — Spinal cord detection and cropping
 
-Segmentation models for spinal cord pathologies (tumors, lesions, SC itself) are typically trained and run on full MRI volumes, most of which contains no spinal cord. **sc-crop** solves this by automatically detecting the spinal cord and cropping the volume tightly around it, so your segmentation model only ever sees the relevant region.
+Segmentation models for spinal cord pathologies (tumors, lesions, SC itself) are typically trained and run on full volumes where the spinal cord occupies only a small fraction of the voxels. **sc-crop** solves this by automatically detecting the spinal cord and cropping the volume tightly around it, so your segmentation model only ever sees the relevant region.
 
 This reduces memory usage, speeds up inference, and often improves model accuracy by removing irrelevant background. The recommended workflow is:
 
@@ -8,7 +8,7 @@ This reduces memory usage, speeds up inference, and often improves model accurac
 2. **Training** — train your segmentation model on the cropped volumes
 3. **Inference** — apply the same sc-crop preprocessing to new images, run your model, then optionally restore the segmentation to the original space
 
-Works across contrasts (T1, T2, MP2RAGE, DWI…), field strengths, and pathologies. Based on a YOLO26n model trained on multiple datasets covering cervical and lumbar spine. Available as a **CLI tool** and as an **importable Python package**.
+Works on both **MRI and CT**, across contrasts (T1, T2, MP2RAGE, DWI…), field strengths, and pathologies. Based on a YOLO26n model trained on multiple datasets covering cervical and lumbar spine. Available as a **CLI tool** and as an **importable Python package**.
 
 <img width="1713" height="727" alt="image" src="https://github.com/user-attachments/assets/d8958227-06b6-4430-9378-4a6f91e9741d" />
 
