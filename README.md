@@ -32,37 +32,14 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.5"
 
 ```bash
 sc_crop t2.nii.gz                          # detect only → t2_bbox.txt
-sc_crop t2.nii.gz --crop                   # + cropped volume → t2_crop.nii.gz
-sc_crop t2.nii.gz --crop --las             # cropped volume in LAS orientation
-sc_crop -i t2.nii.gz -o out.nii.gz --crop  # explicit input/output paths
-sc_crop t2.nii.gz --crop --time            # print elapsed time per step
+sc_crop -i t2.nii.gz -o out.nii.gz --crop  # crop → out.nii.gz
+
+# Padding around the detected spinal cord (mm) — defaults: sup=40, inf=60, left=right=10, ant=post=15
+sc_crop t2.nii.gz --crop --pad-sup 50 --pad-inf 80 --pad-left 10 --pad-right 10 --pad-ant 15 --pad-post 15
+sc_crop t2.nii.gz --crop --pad-si 30 --pad-rl 10 --pad-ap 15
 ```
 
-**Padding** (all values in mm, clamped to image boundaries):
-
-```bash
-# Individual per face — highest priority
-sc_crop t2.nii.gz --pad-sup 50 --pad-inf 80
-sc_crop t2.nii.gz --pad-left 5 --pad-right 15
-sc_crop t2.nii.gz --pad-ant 10 --pad-post 20
-
-# Symmetric shorthand
-sc_crop t2.nii.gz --pad-si 30              # superior=30 inferior=30
-sc_crop t2.nii.gz --pad-si 30 --pad-inf 60 # shorthand + override one face
-```
-
-All values are padding **around the detected spinal cord**, in mm, clamped to image boundaries.
-Defaults: `superior=40mm, inferior=60mm, left=right=10mm, anterior=posterior=15mm`.
-Priority per face: individual > shorthand > default.
-
-`t2_bbox.txt` contains inclusive voxel indices `xmin xmax ymin ymax zmin zmax` in native image space.
-
-**GPU inference** (requires `[yolo]` extra):
-
-```bash
-sc_crop t2.nii.gz --crop --no-onnx --device cuda
-```
-
+Padding is clamped to image boundaries. Priority per face: individual > shorthand > default.
 Run `sc_crop --help` for all options.
 
 ---
