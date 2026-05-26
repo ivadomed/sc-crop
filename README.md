@@ -51,6 +51,7 @@ sc_crop t2.nii.gz --pad-si 30              # superior=30 inferior=30
 sc_crop t2.nii.gz --pad-si 30 --pad-inf 60 # shorthand + override one face
 ```
 
+All values are padding **around the detected spinal cord**, in mm, clamped to image boundaries.
 Defaults: `superior=40mm, inferior=60mm, left=right=10mm, anterior=posterior=15mm`.
 Priority per face: individual > shorthand > default.
 
@@ -90,7 +91,7 @@ nib.save(crop_label, "t2_label_crop.nii.gz")
 
 ### Padding
 
-Priority per face: **individual > shorthand > default**.
+All values define the margin **around the detected spinal cord**, in mm. Priority per face: **individual > shorthand > default**.
 
 ```python
 # Defaults: superior=40mm, inferior=60mm, left=right=10mm, anterior=posterior=15mm
@@ -143,7 +144,7 @@ crop_nii, ctx = detect_and_crop("t2.nii.gz")  # detect + crop in one call
 
 ### ⚠️ Critical: use the same padding at training and inference
 
-sc-crop must be applied with **identical padding** at both training and inference time. Different padding changes the crop boundaries and the distribution of what the model sees, which degrades performance. Pick your padding values once and keep them fixed throughout.
+sc-crop must be applied with **identical padding around the detected spinal cord** at both training and inference time. Different padding changes the crop boundaries and the distribution of what the model sees, which degrades performance. Pick your padding values once and keep them fixed throughout.
 
 ### Step 1 — Preprocess training data
 
