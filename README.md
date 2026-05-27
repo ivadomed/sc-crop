@@ -58,8 +58,14 @@ _The command prints a ready-to-use `sct_crop_image` command to crop the image us
 
 ### Crop the volume
 
+Use the bbox file produced by the detect step to crop any volume — image, label, or both with identical boundaries:
+
 ```bash
-sc_crop -i t2.nii.gz -o t2_crop.nii.gz --crop
+sc_crop -i t2.nii.gz     --bbox t2_bbox.txt -o t2_crop.nii.gz
+```
+
+```bash
+sc_crop -i t2_seg.nii.gz --bbox t2_bbox.txt -o t2_seg_crop.nii.gz
 ```
 
 ### Adjust the bounding box margin
