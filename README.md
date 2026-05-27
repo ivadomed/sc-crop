@@ -42,22 +42,21 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.5"
 **Quick test with the [SCT tutorial image](https://spinalcordtoolbox.com/stable/user_section/tutorials/segmentation/before-starting.html):**
 
 ```bash
-curl -L https://github.com/spinalcordtoolbox/sct_tutorial_data/releases/download/r20260508/data_spinalcord-segmentation.zip -o /tmp/sct_tutorial.zip
-unzip /tmp/sct_tutorial.zip -d /tmp/sct_tutorial
+mkdir ~/sc-crop-test && cd ~/sc-crop-test
+curl -L https://github.com/spinalcordtoolbox/sct_tutorial_data/releases/download/r20260508/data_spinalcord-segmentation.zip -o sct_tutorial.zip
+unzip sct_tutorial.zip
 ```
 
+Get the bounding box coordinates:
+
 ```bash
-sc_crop -i /tmp/sct_tutorial/single_subject/data/t2/t2.nii.gz --crop
+sc_crop -i single_subject/data/t2/t2.nii.gz
 ```
 
-**General usage:**
+Crop the volume:
 
 ```bash
-sc_crop t2.nii.gz
-```
-
-```bash
-sc_crop -i t2.nii.gz -o out.nii.gz --crop
+sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_crop.nii.gz --crop
 ```
 
 You can define a margin around the detected spinal cord (mm, clamped to image boundaries). Defaults: `sup=40, inf=60, left=right=10, ant=post=15`. Priority: individual (e.g. `--pad-sup`) > symmetric (e.g. `--pad-si`) > default.
