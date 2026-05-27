@@ -42,19 +42,12 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.5"
 **Quick test with the SCT tutorial image:**
 
 ```bash
-python -c "
-import urllib.request, zipfile, pathlib
-out = pathlib.Path.home() / '.cache/sc_crop/tutorial'
-out.mkdir(parents=True, exist_ok=True)
-urllib.request.urlretrieve('https://github.com/spinalcordtoolbox/sct_tutorial_data/releases/download/r20260508/data_spinalcord-segmentation.zip', out / 'tmp.zip')
-zipfile.ZipFile(out / 'tmp.zip').extractall(out)
-(out / 'tmp.zip').unlink()
-print(out / 'single_subject/data/t2/t2.nii.gz')
-"
+curl -L https://github.com/spinalcordtoolbox/sct_tutorial_data/releases/download/r20260508/data_spinalcord-segmentation.zip -o /tmp/sct_tutorial.zip
+unzip /tmp/sct_tutorial.zip -d /tmp/sct_tutorial
 ```
 
 ```bash
-sc_crop -i ~/.cache/sc_crop/tutorial/single_subject/data/t2/t2.nii.gz --crop
+sc_crop -i /tmp/sct_tutorial/single_subject/data/t2/t2.nii.gz --crop
 ```
 
 **General usage:**
