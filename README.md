@@ -215,26 +215,35 @@ nnUNetv2_train 001 3d_fullres 0
 
 **Step 3 — Inference on a new image**
 
-Crop the image first, run `nnUNetv2_predict` on the cropped volume, then restore the segmentation to the original space with `uncrop`:
+In practice, inference is a single Python script: sc_crop crops the image, `nnUNetPredictor` runs on the crop, then `uncrop` restores the segmentation to the original space.
 
 ```python
 from sc_crop import detect, crop, uncrop
+from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 import nibabel as nib
+import torch, tempfile, os
 
-PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
-           pad_anterior=15, pad_posterior=15)  # same as training
+PAD = dict(pad_left=10, pad_right=10, pad_anterior=15, pad_posterior=15,
+           pad_superior=40, pad_inferior=60)  # same as training
 
+# Detect and crop
 bbox     = detect("new_subject.nii.gz", **PAD)
 crop_img = crop(nib.load("new_subject.nii.gz"), bbox)
-nib.save(crop_img, "nnunet_input/new_subject_0000.nii.gz")
-```
 
-```bash
-nnUNetv2_predict -d 001 -c 3d_fullres -i nnunet_input/ -o nnunet_output/
-```
+with tempfile.TemporaryDirectory() as tmpdir:
+    fname_crop = os.path.join(tmpdir, "new_subject_0000.nii.gz")
+    fname_pred = os.path.join(tmpdir, "pred")
+    os.makedirs(fname_pred)
+    nib.save(crop_img, fname_crop)
 
-```python
-seg_full = uncrop(nib.load("nnunet_output/new_subject.nii.gz"), bbox)
+    # nnUNet inference on the cropped volume
+    predictor = nnUNetPredictor(device=torch.device("cpu"))
+    predictor.initialize_from_trained_model_folder("/path/to/model", use_folds=(0,))
+    predictor.predict_from_files([[fname_crop]], fname_pred)
+
+    # Restore segmentation to original space
+    seg_full = uncrop(nib.load(os.path.join(fname_pred, "new_subject.nii.gz")), bbox)
+
 nib.save(seg_full, "new_subject_seg.nii.gz")
 ```
 
