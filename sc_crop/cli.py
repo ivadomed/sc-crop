@@ -211,10 +211,11 @@ examples:
     _write_bbox_txt(bbox_txt, bbox_orig)
     print(f"          → {bbox_txt}")
 
-    print(f"\nTo crop with sc_crop:")
-    print(f"  {GREEN}sc_crop -i {input_path} --bbox {bbox_txt}{RESET}")
     print(f"\nTo crop with SCT (if installed):")
     print(f"  {GREEN}sct_crop_image -i {input_path} -xmin {xmin} -xmax {xmax} -ymin {ymin} -ymax {ymax} -zmin {zmin} -zmax {zmax}{RESET}")
+    print(f"\nTo crop with sc_crop:")
+    print(f"  {GREEN}sc_crop -i {input_path} --crop -xmin {xmin} -xmax {xmax} -ymin {ymin} -ymax {ymax} -zmin {zmin} -zmax {zmax}{RESET}")
+    print(f"  {GREEN}sc_crop -i {input_path} --bbox {bbox_txt}{RESET}")
 
 
 if __name__ == "__main__":
