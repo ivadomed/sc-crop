@@ -558,6 +558,16 @@ def _write_bbox_txt(path: Path, bbox: BBox3D) -> None:
         f.write(f"{bbox.rl1} {bbox.rl2 - 1} {bbox.ap1} {bbox.ap2 - 1} {bbox.z1} {bbox.z2 - 1}\n")
 
 
+def _read_bbox_txt(path: Path) -> tuple[int, int, int, int, int, int]:
+    """Read inclusive voxel indices from a bbox txt file. Returns (xmin, xmax, ymin, ymax, zmin, zmax)."""
+    for line in Path(path).read_text().splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        xmin, xmax, ymin, ymax, zmin, zmax = map(int, line.split())
+        return xmin, xmax, ymin, ymax, zmin, zmax
+    raise ValueError(f"No coordinate line found in {path}")
+
+
 # ─── Detection pipeline ───────────────────────────────────────────────────────
 
 def detect(img_path: "str | Path | nib.Nifti1Image",

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import nibabel as nib
 
-from .crop import detect, crop, _write_bbox_txt, _stem, _warn_overwrite
+from .crop import detect, crop, _write_bbox_txt, _read_bbox_txt, _stem, _warn_overwrite
 from .download import download
 
 GREEN, RESET = "\033[32m", "\033[0m"
@@ -58,15 +58,16 @@ def main():
 modes:
   detect (default)     sc_crop -i t2.nii.gz
   crop from coords     sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
+  crop from bbox file  sc_crop -i t2.nii.gz --bbox t2_bbox.txt
   detect + crop        sc_crop -i t2.nii.gz --detect-crop
 
 examples:
   sc_crop -i t2.nii.gz                                            # detect → bbox.txt
   sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
-  sc_crop -i t2.nii.gz --crop -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
+  sc_crop -i t2.nii.gz --bbox t2_bbox.txt                        # crop from bbox file
+  sc_crop -i label.nii.gz --bbox t2_bbox.txt                     # crop label with same bbox
   sc_crop -i t2.nii.gz --detect-crop                             # detect + crop in one step
   sc_crop -i t2.nii.gz --detect-crop --pad-sup 50 --pad-inf 80
-  sc_crop -i label.nii.gz --crop -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
 """,
     )
 
@@ -89,6 +90,8 @@ examples:
 
     # ── Crop coordinates ──────────────────────────────────────────────────────
     coords = parser.add_argument_group("crop coordinates (voxel indices, inclusive)")
+    coords.add_argument("--bbox", default=None, metavar="FILE",
+                        help="Bbox txt file produced by sc_crop detect (alternative to -xmin/-xmax/…)")
     coords.add_argument("-xmin", type=int, default=None)
     coords.add_argument("-xmax", type=int, default=None)
     coords.add_argument("-ymin", type=int, default=None)
@@ -135,6 +138,13 @@ examples:
     coords_provided = any(v is not None for v in
                           [args.xmin, args.xmax, args.ymin, args.ymax, args.zmin, args.zmax])
 
+    # ── Mode: crop from bbox file ─────────────────────────────────────────────
+    if args.bbox:
+        xmin, xmax, ymin, ymax, zmin, zmax = _read_bbox_txt(args.bbox)
+        _crop_from_coords(input_path, xmin, xmax, ymin, ymax, zmin, zmax,
+                          args.output, args.translate)
+        return
+
     # ── Mode: crop from coordinates ───────────────────────────────────────────
     if args.crop or coords_provided:
         missing = [name for name, val in [
@@ -143,7 +153,7 @@ examples:
             ("-zmin", args.zmin), ("-zmax", args.zmax),
         ] if val is None]
         if missing:
-            parser.error(f"crop mode requires all 6 coordinates — missing: {', '.join(missing)}")
+            parser.error(f"crop mode requires all 6 coordinates or --bbox file — missing: {', '.join(missing)}")
         _crop_from_coords(input_path,
                           args.xmin, args.xmax, args.ymin, args.ymax, args.zmin, args.zmax,
                           args.output, args.translate)
@@ -202,7 +212,7 @@ examples:
     print(f"          → {bbox_txt}")
 
     print(f"\nTo crop with sc_crop:")
-    print(f"  {GREEN}sc_crop --crop -i {input_path} -xmin {xmin} -xmax {xmax} -ymin {ymin} -ymax {ymax} -zmin {zmin} -zmax {zmax}{RESET}")
+    print(f"  {GREEN}sc_crop -i {input_path} --bbox {bbox_txt}{RESET}")
     print(f"\nTo crop with SCT (if installed):")
     print(f"  {GREEN}sct_crop_image -i {input_path} -xmin {xmin} -xmax {xmax} -ymin {ymin} -ymax {ymax} -zmin {zmin} -zmax {zmax}{RESET}")
 
