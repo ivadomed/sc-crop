@@ -55,7 +55,7 @@ Get the bounding box coordinates:
 sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_bbox.txt
 ```
 
-Crop the volume:
+The command prints a ready-to-use `sct_crop_image` command (if [SCT](https://spinalcordtoolbox.com) is installed) and a `sc_crop --crop` command. To crop directly with sc_crop:
 
 ```bash
 sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_crop.nii.gz --crop
