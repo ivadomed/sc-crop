@@ -41,7 +41,7 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.5"
 
 > The environment where sc-crop was installed must be active for the `sc_crop` command to be available.
 
-**Quick test with the [SCT tutorial image](https://spinalcordtoolbox.com/stable/user_section/tutorials/segmentation/before-starting.html):**
+### Quick test — download the [SCT tutorial image](https://spinalcordtoolbox.com/stable/user_section/tutorials/segmentation/before-starting.html)
 
 ```bash
 mkdir ~/sc-crop-test && cd ~/sc-crop-test
@@ -49,13 +49,15 @@ curl -L https://github.com/spinalcordtoolbox/sct_tutorial_data/releases/download
 unzip sct_tutorial.zip
 ```
 
-Get the bounding box coordinates:
+### Get the bounding box coordinates
 
 ```bash
 sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_bbox.txt
 ```
 
-The command prints a ready-to-use `sct_crop_image` command (if [SCT](https://spinalcordtoolbox.com) is installed) and a `sc_crop --crop` command. To crop directly with sc_crop:
+_The command also prints a ready-to-use `sct_crop_image` command (if [SCT](https://spinalcordtoolbox.com) is installed)._
+
+### Crop the volume
 
 ```bash
 sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_crop.nii.gz --crop
