@@ -22,7 +22,6 @@ Usage:
 
 import argparse
 import urllib.request
-import zipfile
 from pathlib import Path
 
 import nibabel as nib
@@ -31,25 +30,19 @@ from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
 
 from sc_crop import detect_and_crop, restore_segmentation
 
-_TUTORIAL_URL   = "https://github.com/spinalcordtoolbox/sct_tutorial_data/releases/download/r20260508/data_spinalcord-segmentation.zip"
-_TUTORIAL_IMG   = "single_subject/data/t2/t2.nii.gz"
+_BASE_URL       = "https://github.com/ivadomed/sc-crop/releases/download/test-data"
 _TUTORIAL_CACHE = Path.home() / ".cache" / "sc_crop" / "tutorial"
+_TUTORIAL_IMG   = _TUTORIAL_CACHE / "t2.nii.gz"
 
 
 def _get_tutorial_image() -> str:
-    """Download and cache the SCT tutorial T2 image. Returns the local path."""
-    out = _TUTORIAL_CACHE / _TUTORIAL_IMG
-    if out.exists():
-        return str(out)
-    print(f"Downloading SCT tutorial data → {_TUTORIAL_CACHE}")
+    """Download and cache the tutorial T2 image. Returns the local path."""
     _TUTORIAL_CACHE.mkdir(parents=True, exist_ok=True)
-    zip_path = _TUTORIAL_CACHE / "tutorial.zip"
-    urllib.request.urlretrieve(_TUTORIAL_URL, zip_path)
-    with zipfile.ZipFile(zip_path) as z:
-        z.extractall(_TUTORIAL_CACHE)
-    zip_path.unlink()
-    print(f"Cached at {out}\n")
-    return str(out)
+    if not _TUTORIAL_IMG.exists():
+        url = f"{_BASE_URL}/t2.nii.gz"
+        print(f"Downloading t2.nii.gz → {_TUTORIAL_IMG}")
+        urllib.request.urlretrieve(url, _TUTORIAL_IMG)
+    return str(_TUTORIAL_IMG)
 
 
 # ── Orientation helpers ────────────────────────────────────────────────────────

@@ -41,18 +41,17 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.8"
 
 > The environment where sc-crop was installed must be active for the `sc_crop` command to be available.
 
-### Quick test — download the [SCT tutorial image](https://spinalcordtoolbox.com/stable/user_section/tutorials/segmentation/before-starting.html)
+### Quick test — download the test image
 
 ```bash
 mkdir ~/sc-crop-test && cd ~/sc-crop-test
-curl -L https://github.com/spinalcordtoolbox/sct_tutorial_data/releases/download/r20260508/data_spinalcord-segmentation.zip -o sct_tutorial.zip
-unzip sct_tutorial.zip
+curl -L https://github.com/ivadomed/sc-crop/releases/download/test-data/t2.nii.gz -o t2.nii.gz
 ```
 
 ### Get the bounding box coordinates
 
 ```bash
-sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_bbox.txt
+sc_crop -i t2.nii.gz -o t2_bbox.txt
 ```
 
 _The command prints a ready-to-use `sct_crop_image` command to crop the image using the detected coordinates (if [SCT](https://spinalcordtoolbox.com) is installed)._
@@ -60,7 +59,7 @@ _The command prints a ready-to-use `sct_crop_image` command to crop the image us
 ### Crop the volume
 
 ```bash
-sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_crop.nii.gz --crop
+sc_crop -i t2.nii.gz -o t2_crop.nii.gz --crop
 ```
 
 ### Adjust the bounding box margin
@@ -68,11 +67,11 @@ sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_crop.nii.gz --crop
 You can define a margin around the detected spinal cord (mm, clamped to image boundaries). Defaults: `sup=40, inf=60, left=right=10, ant=post=15`. Priority: individual (e.g. `--pad-sup`) > symmetric (e.g. `--pad-si`) > default.
 
 ```bash
-sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_crop.nii.gz --crop --pad-sup 50 --pad-inf 80 --pad-left 10 --pad-right 10 --pad-ant 15 --pad-post 15
+sc_crop -i t2.nii.gz -o t2_crop.nii.gz --crop --pad-sup 50 --pad-inf 80 --pad-left 10 --pad-right 10 --pad-ant 15 --pad-post 15
 ```
 
 ```bash
-sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_crop.nii.gz --crop --pad-si 30 --pad-rl 10 --pad-ap 15
+sc_crop -i t2.nii.gz -o t2_crop.nii.gz --crop --pad-si 30 --pad-rl 10 --pad-ap 15
 ```
 
 Run `sc_crop --help` for all options.
@@ -81,9 +80,19 @@ Run `sc_crop --help` for all options.
 
 ## Python API
 
-`detect()` returns the bounding box coordinates and the original image orientation. No files are written — all file I/O is explicit in your code.
+Three functions cover all use cases:
 
-### Detect + crop
+| Function | Description |
+|---|---|
+| `detect(img_path, ...)` | Detects the spinal cord and returns the bounding box coordinates and image orientation |
+| `crop(img, bbox)` | Crops any NIfTI volume (image or label) to the bounding box |
+| `restore_segmentation(seg, bbox)` | Restores a segmentation from the cropped space back to the original full image space |
+
+`detect_and_crop(img_path)` is a convenience wrapper that combines the first two.
+
+### detect() + crop()
+
+`detect()` returns the bounding box coordinates — no files are written. `crop()` works on any volume in the same space (image, label, …).
 
 ```python
 from sc_crop import detect, crop
@@ -91,15 +100,31 @@ import nibabel as nib
 
 bbox = detect("t2.nii.gz")
 
-# crop() works on any volume in the same space (image, label, …)
-crop_img   = crop(nib.load("t2.nii.gz"),       bbox)
-crop_label = crop(nib.load("t2_label.nii.gz"), bbox)
+crop_img   = crop(nib.load("t2.nii.gz"),     bbox)
+crop_label = crop(nib.load("t2_seg.nii.gz"), bbox)
 
 nib.save(crop_img,   "t2_crop.nii.gz")
-nib.save(crop_label, "t2_label_crop.nii.gz")
+nib.save(crop_label, "t2_seg_crop.nii.gz")
 ```
 
 `bbox` contains: `xmin, xmax, ymin, ymax, zmin, zmax` (inclusive, native space), `original_axcodes`.
+
+### restore_segmentation()
+
+After running your model on the cropped image, restore the segmentation to the original full image space:
+
+```python
+from sc_crop import detect, crop, restore_segmentation
+import nibabel as nib
+
+bbox     = detect("t2.nii.gz")
+crop_img = crop(nib.load("t2.nii.gz"), bbox)
+
+seg_crop = my_model(crop_img)              # your model — returns NIfTI in cropped space
+
+seg_full = restore_segmentation(seg_crop, bbox)
+nib.save(seg_full, "t2_seg.nii.gz")
+```
 
 ### Padding
 
@@ -126,29 +151,6 @@ bbox = detect("t2.nii.gz",
 ```
 
 Padding is always clamped to the image boundaries — no out-of-bounds indices are ever produced.
-
-### Restore a segmentation to the original space
-
-```python
-from sc_crop import detect, crop, restore_segmentation
-import nibabel as nib
-
-bbox      = detect("t2.nii.gz")
-crop_img = crop(nib.load("t2.nii.gz"), bbox)
-
-seg_crop = my_model(crop_img)              # your model — returns NIfTI in cropped space
-
-seg_full = restore_segmentation(seg_crop, bbox)
-nib.save(seg_full, "t2_seg.nii.gz")
-```
-
-### Convenience wrapper
-
-```python
-from sc_crop import detect_and_crop
-
-crop_nii, bbox = detect_and_crop("t2.nii.gz")  # detect + crop in one call
-```
 
 ---
 
@@ -245,12 +247,18 @@ nib.save(seg_full, "new_subject_seg.nii.gz")
 
 ## Examples
 
-The `examples/` directory contains two runnable scripts:
-
-**`examples/api_examples.py`** — Python API cookbook covering all usage patterns:
+The example scripts are part of the repository — clone it to run them:
 
 ```bash
-python examples/api_examples.py t2.nii.gz        # run all examples
+git clone https://github.com/ivadomed/sc-crop.git
+cd sc-crop
+```
+
+**`examples/api_examples.py`** — Python API cookbook covering all usage patterns. If no image is provided, the SCT tutorial T2 is downloaded automatically:
+
+```bash
+python examples/api_examples.py                  # auto-download tutorial data
+python examples/api_examples.py t2.nii.gz        # use your own image
 python examples/api_examples.py t2.nii.gz --ex 3 # run example 3 only (padding)
 ```
 
@@ -263,9 +271,10 @@ python examples/api_examples.py t2.nii.gz --ex 3 # run example 3 only (padding)
 | 5 | Fake segmentation model + `restore_segmentation()` round-trip |
 | 6 | GPU inference (`use_onnx=False`) |
 
-**`examples/infer_with_sc_crop.py`** — Full inference pipeline template with a built-in fake model (center-cylinder segmentation). Runs out of the box — no real model needed:
+**`examples/infer_with_sc_crop.py`** — Full inference pipeline template with a built-in fake model (center-cylinder segmentation). If no input is provided, the SCT tutorial T2 is downloaded automatically:
 
 ```bash
+python examples/infer_with_sc_crop.py                        # auto-download tutorial data
 python examples/infer_with_sc_crop.py -i t2.nii.gz -o seg.nii.gz
 ```
 
