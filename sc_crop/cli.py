@@ -30,6 +30,11 @@ from .download import download
 GREEN, RESET = "\033[32m", "\033[0m"
 
 
+def _print_fsleyes(input_path, crop_path):
+    print(f"\nDone! To view results, type:")
+    print(f"  {GREEN}fsleyes {input_path} {crop_path} &{RESET}")
+
+
 def _crop_from_coords(input_path, xmin, xmax, ymin, ymax, zmin, zmax,
                       output, translate):
     """Crop a NIfTI using explicit voxel coordinates."""
@@ -44,6 +49,7 @@ def _crop_from_coords(input_path, xmin, xmax, ymin, ymax, zmin, zmax,
     _warn_overwrite(crop_path)
     nib.save(cropped, crop_path)
     print(f"Crop    : {crop_path}  shape={cropped.shape}")
+    _print_fsleyes(input_path, crop_path)
 
 
 def main():
@@ -198,6 +204,7 @@ examples:
         _warn_overwrite(crop_path)
         nib.save(cropped, crop_path)
         print(f"Crop    : {crop_path}  shape={cropped.shape}")
+        _print_fsleyes(input_path, crop_path)
         return
 
     # ── Mode: detect only ─────────────────────────────────────────────────────
