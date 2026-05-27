@@ -16,7 +16,7 @@ Works on both **MRI and CT**, across contrasts (T1, T2, MP2RAGE, DWI…), field 
 
 ## Install
 
-Fresh dedicated environment (recommended):
+Fresh dedicated environment (for testing):
 
 ```bash
 conda create -n sc_crop python=3.12 && conda activate sc_crop
