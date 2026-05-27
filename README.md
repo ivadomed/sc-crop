@@ -91,14 +91,12 @@ Three functions cover all use cases:
 `detect()` also accepts optional padding parameters (`pad_superior`, `pad_inferior`, `pad_left`, `pad_right`, `pad_anterior`, `pad_posterior` — in mm) and symmetric shorthands (`pad_si`, `pad_rl`, `pad_ap`). See [Padding](#padding) below.
 
 ```python
-bbox = detect("t2.nii.gz")          # path or nib.Nifti1Image
+img = nib.load("t2.nii.gz")         # also works on t2_seg.nii.gz
 ```
 
 ```python
-crop_img = crop("t2.nii.gz", bbox)  # also works on t2_seg.nii.gz
-```
-
-```python
+bbox     = detect(img)
+crop_img = crop(img, bbox)
 full_img = uncrop(crop_img, bbox)
 ```
 
