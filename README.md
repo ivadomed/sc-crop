@@ -50,7 +50,7 @@ unzip sct_tutorial.zip
 Get the bounding box coordinates:
 
 ```bash
-sc_crop -i single_subject/data/t2/t2.nii.gz
+sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_bbox.txt
 ```
 
 Crop the volume:
