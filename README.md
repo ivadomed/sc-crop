@@ -84,46 +84,53 @@ Three functions cover all use cases:
 
 | Function | Description |
 |---|---|
-| `detect(img_path, ...)` | Detects the spinal cord and returns the bounding box coordinates and image orientation |
+| `detect(img_path, ...)` | Runs the SC detector and returns the bounding box coordinates |
 | `crop(img, bbox)` | Crops any NIfTI volume (image or label) to the bounding box |
 | `restore_segmentation(seg, bbox)` | Restores a segmentation from the cropped space back to the original full image space |
 
-`detect_and_crop(img_path)` is a convenience wrapper that combines the first two.
+### detect()
 
-### detect() + crop()
-
-`detect()` returns the bounding box coordinates — no files are written. `crop()` works on any volume in the same space (image, label, …).
+Runs the spinal cord detector and returns a `bbox` dict with voxel coordinates `xmin, xmax, ymin, ymax, zmin, zmax` (inclusive, native space) and `original_axcodes`. No files are written.
 
 ```python
-from sc_crop import detect, crop
-import nibabel as nib
-
 bbox = detect("t2.nii.gz")
-
-crop_img   = crop(nib.load("t2.nii.gz"),     bbox)
-crop_label = crop(nib.load("t2_seg.nii.gz"), bbox)
-
-nib.save(crop_img,   "t2_crop.nii.gz")
-nib.save(crop_label, "t2_seg_crop.nii.gz")
 ```
 
-`bbox` contains: `xmin, xmax, ymin, ymax, zmin, zmax` (inclusive, native space), `original_axcodes`.
+### crop()
+
+Crops any NIfTI volume in the same space using the bbox — call it once per volume (image, label, …) with the same bbox:
+
+```python
+crop_img = crop(nib.load("t2.nii.gz"),     bbox)
+crop_seg = crop(nib.load("t2_seg.nii.gz"), bbox)
+```
 
 ### restore_segmentation()
 
-After running your model on the cropped image, restore the segmentation to the original full image space:
+Restores a segmentation produced in the cropped space back to the original full image space and affine:
+
+```python
+seg_full = restore_segmentation(seg_crop, bbox)
+```
+
+### Quickstart
 
 ```python
 from sc_crop import detect, crop, restore_segmentation
 import nibabel as nib
 
 bbox     = detect("t2.nii.gz")
-crop_img = crop(nib.load("t2.nii.gz"), bbox)
+crop_img = crop(nib.load("t2.nii.gz"),     bbox)  # crop image
+crop_seg = crop(nib.load("t2_seg.nii.gz"), bbox)  # crop label with same bbox
 
-seg_crop = my_model(crop_img)              # your model — returns NIfTI in cropped space
+seg_full = restore_segmentation(crop_seg, bbox)    # restore to original space
+```
 
-seg_full = restore_segmentation(seg_crop, bbox)
-nib.save(seg_full, "t2_seg.nii.gz")
+A runnable version that auto-downloads the test images is available in [`examples/quickstart.py`](examples/quickstart.py):
+
+```bash
+git clone https://github.com/ivadomed/sc-crop.git
+python sc-crop/examples/quickstart.py
 ```
 
 ### Padding
