@@ -103,7 +103,7 @@ full_img = uncrop(crop_img, bbox)               # restore to the original space
 
 ### Bounding box padding
 
-`detect()` adds a margin around the detected spinal cord (in mm). Values are clamped to the image boundaries. Priority per face: **individual > symmetric > default** (sup=40, inf=60, left=right=10, ant=post=15).
+The margin around the detected spinal cord is adjustable per face (in mm).
 
 ```python
 # Adjust SI only (most common)
@@ -120,6 +120,8 @@ bbox = detect(img, pad_superior=40, pad_inferior=60,
                    pad_left=10,     pad_right=10,
                    pad_anterior=15, pad_posterior=15)
 ```
+
+Padding is always clamped to the image boundaries. Priority per face: **individual > symmetric > default** (sup=40, inf=60, left=right=10, ant=post=15).
 
 ---
 
