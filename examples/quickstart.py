@@ -4,7 +4,7 @@ sc-crop quickstart — detect, crop, restore.
 Demonstrates the three core functions of sc-crop:
   1. detect()               — find the spinal cord bounding box
   2. crop()                 — crop image and label to that box
-  3. restore_segmentation() — restore a segmentation back to the original space
+  3. uncrop() — restore a segmentation back to the original space
 
 Downloads the test T2 image and SC segmentation automatically if not cached.
 
@@ -23,7 +23,7 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-from sc_crop import detect, crop, restore_segmentation
+from sc_crop import detect, crop, uncrop
 
 _BASE_URL      = "https://github.com/ivadomed/sc-crop/releases/download/test-data"
 _CACHE         = Path.home() / ".cache" / "sc_crop" / "tutorial"
@@ -60,7 +60,7 @@ def main():
     print(f"crop  : {nib.load(img_path).shape} → {crop_img.shape}")
 
     # ── 3. Restore segmentation to the original space ─────────────────────────
-    seg_full = restore_segmentation(crop_seg, bbox)
+    seg_full = uncrop(crop_seg, bbox)
     assert seg_full.shape == nib.load(img_path).shape[:3]
     assert np.array_equal(np.asarray(seg_full.dataobj),
                           np.asarray(nib.load(seg_path).dataobj))

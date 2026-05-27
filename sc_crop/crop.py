@@ -5,13 +5,13 @@ Public API (pure — no file I/O):
     detect(img_path, ...)              → bbox dict     — detect SC bbox
     crop(img, bbox)                     → NIfTI        — crop any volume with the same bbox
     detect_and_crop(img_path, ...)     → (NIfTI, bbox) — convenience: detect + crop in one call
-    restore_segmentation(seg, bbox)     → NIfTI        — restore segmentation to original space
+    uncrop(img, bbox)     → NIfTI        — restore any cropped volume to original space
 
 The context dict returned by detect() contains:
     xmin, xmax, ymin, ymax, zmin, zmax  — inclusive bbox in native voxel space
     original_axcodes                    — e.g. "RAS", "LPI"
   Private keys (for CLI / advanced use):
-    _original_img   — loaded NIfTI in native orientation (for restore_segmentation)
+    _original_img   — loaded NIfTI in native orientation (for uncrop)
     _img_las        — LAS-reoriented NIfTI (for --las crop)
     _bbox_pad_las   — BBox3D in LAS space (for --las crop)
     _original_ornt  — nibabel orientation array of the original image
@@ -747,7 +747,7 @@ def detect(img_path: str,
         "xmin": xmin, "xmax": xmax,
         "ymin": ymin, "ymax": ymax,
         "zmin": zmin, "zmax": zmax,
-        # private keys — used by CLI and restore_segmentation
+        # private keys — used by CLI and uncrop
         "_original_img":  img,
         "_img_las":       img_las,
         "_bbox_pad_las":  bbox_pad,
@@ -810,22 +810,22 @@ def detect_and_crop(img_path, **kwargs) -> tuple:
 
     Returns:
         (crop_nii, bbox) where crop_nii is the cropped image and bbox is passed
-        to crop() or restore_segmentation().
+        to crop() or uncrop().
     """
     bbox = detect(img_path, **kwargs)
     return crop(bbox["_original_img"], bbox), bbox
 
 
-def restore_segmentation(seg_nii, bbox) -> "nib.Nifti1Image":
-    """Place a segmentation (cropped space) back into the full original image space.
+def uncrop(seg_nii, bbox) -> "nib.Nifti1Image":
+    """Place any cropped volume back into the full original image space.
 
-    The segmentation must be in the same orientation as the original image.
-    If your model reoriented the crop (e.g., to RPI), reorient the segmentation
-    back before calling this function (see detect_and_crop() example).
+    The volume must be in the same orientation as the original image.
+    If your model reoriented the crop (e.g., to RPI), reorient back
+    before calling this function (see detect_and_crop() example).
 
     Args:
-        seg_nii: Binary segmentation NIfTI in cropped space (original orientation).
-        bbox:     Context dict returned by detect_and_crop().
+        seg_nii: NIfTI volume in cropped space (original orientation).
+        bbox:     Context dict returned by detect() or detect_and_crop().
 
     Returns:
         nib.Nifti1Image with segmentation padded to the full original image space,

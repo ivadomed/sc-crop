@@ -24,7 +24,7 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-from sc_crop import detect, crop, detect_and_crop, restore_segmentation
+from sc_crop import detect, crop, detect_and_crop, uncrop
 
 _BASE_URL      = "https://github.com/ivadomed/sc-crop/releases/download/test-data"
 _TUTORIAL_CACHE = Path.home() / ".cache" / "sc_crop" / "tutorial"
@@ -140,22 +140,22 @@ def example_detect_and_crop(img_path: str, _seg_path: str) -> None:
     print(f"  → {out}")
 
 
-# ─── Example 5 — restore_segmentation ────────────────────────────────────────
+# ─── Example 5 — uncrop ────────────────────────────────────────
 
 def example_restore(img_path: str, seg_path: str) -> None:
     """Crop the SC segmentation with the same bbox, restore it to the original space.
 
     Uses the real SC segmentation (t2_seg.nii.gz) to demonstrate that
-    restore_segmentation() correctly places it back at the right anatomical
+    uncrop() correctly places it back at the right anatomical
     location. Open the output in FSLeyes alongside the original to verify.
     """
-    print("\n── Example 5: crop label + restore_segmentation() ──────────────")
+    print("\n── Example 5: crop label + uncrop() ──────────────")
 
     crop_nii, bbox = detect_and_crop(img_path)
     crop_seg       = crop(nib.load(seg_path), bbox)
 
     # Simulate a model output: use the cropped real segmentation as-is
-    seg_full   = restore_segmentation(crop_seg, bbox)
+    seg_full   = uncrop(crop_seg, bbox)
     orig_shape = nib.load(img_path).shape[:3]
     assert seg_full.shape == orig_shape, f"expected {orig_shape}, got {seg_full.shape}"
 
@@ -189,7 +189,7 @@ EXAMPLES = {
     2: ("Multi-volume: image + label",             example_multi_volume),
     3: ("Padding variants",                        example_padding),
     4: ("detect_and_crop() one-liner",             example_detect_and_crop),
-    5: ("crop label + restore_segmentation()",     example_restore),
+    5: ("crop label + uncrop()",     example_restore),
     6: ("GPU inference (PyTorch, skip if no GPU)", example_gpu),
 }
 

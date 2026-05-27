@@ -4,7 +4,7 @@ sc-crop — Spinal cord detection and cropping.
 Public API:
     detect(img_path, ...)                  → bbox              — detect SC bbox, return context
     crop(img, bbox)                         → cropped NIfTI    — crop any volume (image or label)
-    restore_segmentation(seg_nii, bbox)     → full-space NIfTI — restore segmentation to original space
+    uncrop(img, bbox)          → full-space NIfTI — restore any cropped volume to original space
     detect_and_crop(img_path, ...)         → (crop_nii, bbox)  — convenience: detect + crop image
     crop_nifti(img, bbox)                   → cropped NIfTI    — alias for crop() (backward compat)
     download()                             → pre-download ONNX models (auto on first use)
@@ -20,7 +20,7 @@ Version constants:
     MODEL_VERSION     → alias for __model_version__
 """
 
-from .crop import crop, crop_nifti, detect, detect_and_crop, load_config, restore_segmentation
+from .crop import crop, crop_nifti, detect, detect_and_crop, load_config, uncrop
 from .download import (
     download,
     download_pt,

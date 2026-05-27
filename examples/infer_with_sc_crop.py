@@ -28,7 +28,7 @@ import nibabel as nib
 import numpy as np
 from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
 
-from sc_crop import detect_and_crop, restore_segmentation
+from sc_crop import detect_and_crop, uncrop
 
 _BASE_URL       = "https://github.com/ivadomed/sc-crop/releases/download/test-data"
 _TUTORIAL_CACHE = Path.home() / ".cache" / "sc_crop" / "tutorial"
@@ -112,7 +112,7 @@ def infer(input_path: str, output_path: str) -> None:
 
     # Step 4
     seg_crop = reorient_back(seg_rpi, original_orientation)
-    seg_full = restore_segmentation(seg_crop, bbox)
+    seg_full = uncrop(seg_crop, bbox)
 
     nib.save(seg_full, output_path)
 

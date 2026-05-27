@@ -86,7 +86,7 @@ Three functions cover all use cases:
 |---|---|
 | `detect(img_path)` | Runs the SC detector and returns the bounding box coordinates |
 | `crop(img, bbox)` | Crops any NIfTI volume (image or label) to the bounding box |
-| `restore_segmentation(seg, bbox)` | Restores a segmentation from the cropped space back to the original full image space |
+| `uncrop(seg, bbox)` | Restores a segmentation from the cropped space back to the original full image space |
 
 `detect()` also accepts optional padding parameters (`pad_superior`, `pad_inferior`, `pad_left`, `pad_right`, `pad_anterior`, `pad_posterior` — in mm) and symmetric shorthands (`pad_si`, `pad_rl`, `pad_ap`). See [Padding](#padding) below.
 
@@ -100,20 +100,20 @@ crop_seg = crop(nib.load("t2_seg.nii.gz"), bbox)
 ```
 
 ```python
-seg_full = restore_segmentation(seg_crop, bbox)
+seg_full = uncrop(seg_crop, bbox)
 ```
 
 ### Quickstart
 
 ```python
-from sc_crop import detect, crop, restore_segmentation
+from sc_crop import detect, crop, uncrop
 import nibabel as nib
 
 bbox     = detect("t2.nii.gz")
 crop_img = crop(nib.load("t2.nii.gz"),     bbox)  # crop image
 crop_seg = crop(nib.load("t2_seg.nii.gz"), bbox)  # crop label with same bbox
 
-seg_full = restore_segmentation(crop_seg, bbox)    # restore to original space
+seg_full = uncrop(crop_seg, bbox)    # restore to original space
 ```
 
 A runnable version that auto-downloads the test images is available in [`examples/quickstart.py`](examples/quickstart.py):
@@ -186,7 +186,7 @@ Train normally on `*_crop.nii.gz` images and labels.
 Apply the **same padding**, run your model on the crop, then restore the segmentation to the original space:
 
 ```python
-from sc_crop import detect, crop, restore_segmentation
+from sc_crop import detect, crop, uncrop
 import nibabel as nib
 
 PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
@@ -196,7 +196,7 @@ bbox      = detect("new_subject.nii.gz", **PAD)
 crop_img = crop(nib.load("new_subject.nii.gz"), bbox)
 
 seg_crop = my_model(crop_img)                  # run your segmentation model
-seg_full = restore_segmentation(seg_crop, bbox) # back to original space + affine
+seg_full = uncrop(seg_crop, bbox) # back to original space + affine
 nib.save(seg_full, "new_subject_seg.nii.gz")
 ```
 
@@ -224,7 +224,7 @@ for subject in subjects:
 **Inference on a new image:** apply the same padding, crop, run nnUNet, then restore to the original space:
 
 ```python
-from sc_crop import detect, crop, restore_segmentation
+from sc_crop import detect, crop, uncrop
 import nibabel as nib
 
 PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
@@ -236,7 +236,7 @@ nib.save(crop_img, "new_subject_crop.nii.gz")
 
 # nnUNetv2_predict -i new_subject_crop.nii.gz -o seg_crop/ ...
 
-seg_full = restore_segmentation(nib.load("seg_crop/new_subject_crop.nii.gz"), bbox)
+seg_full = uncrop(nib.load("seg_crop/new_subject_crop.nii.gz"), bbox)
 nib.save(seg_full, "new_subject_seg.nii.gz")
 ```
 
@@ -265,7 +265,7 @@ python examples/api_examples.py t2.nii.gz --ex 3 # run example 3 only (padding)
 | 2 | Multi-volume: detect once, crop image + label with the same bbox |
 | 3 | Padding variants: default / symmetric / mixed / full individual |
 | 4 | `detect_and_crop()` one-liner |
-| 5 | Fake segmentation model + `restore_segmentation()` round-trip |
+| 5 | Fake segmentation model + `uncrop()` round-trip |
 | 6 | GPU inference (`use_onnx=False`) |
 
 **`examples/infer_with_sc_crop.py`** — Full inference pipeline template with a built-in fake model (center-cylinder segmentation). If no input is provided, the SCT tutorial T2 is downloaded automatically:
