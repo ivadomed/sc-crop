@@ -109,8 +109,8 @@ The margin around the detected spinal cord is adjustable per face (in mm).
 # Adjust SI only (most common)
 bbox = detect(img, pad_superior=50, pad_inferior=80)
 
-# Symmetric SI
-bbox = detect(img, pad_si=30)
+# All 3 symmetric
+bbox = detect(img, pad_si=30, pad_rl=10, pad_ap=15)
 
 # Symmetric + override one face
 bbox = detect(img, pad_si=30, pad_inferior=60)
