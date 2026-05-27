@@ -90,20 +90,20 @@ examples:
     mode.add_argument("--detect",      action="store_true",
                       help="Detect spinal cord and write bbox.txt (default mode)")
     mode.add_argument("--crop",        action="store_true",
-                      help="Crop from coordinates (requires -xmin/-xmax/-ymin/-ymax/-zmin/-zmax)")
+                      help="Crop using --bbox file or explicit -xmin/-xmax/… coordinates (no detection)")
     mode.add_argument("--detect-crop", dest="detect_crop", action="store_true",
                       help="Detect spinal cord then crop in one step")
 
     # ── Crop coordinates ──────────────────────────────────────────────────────
     coords = parser.add_argument_group("crop coordinates (voxel indices, inclusive)")
     coords.add_argument("--bbox", default=None, metavar="FILE",
-                        help="Bbox txt file produced by sc_crop detect (alternative to -xmin/-xmax/…)")
-    coords.add_argument("-xmin", type=int, default=None)
-    coords.add_argument("-xmax", type=int, default=None)
-    coords.add_argument("-ymin", type=int, default=None)
-    coords.add_argument("-ymax", type=int, default=None)
-    coords.add_argument("-zmin", type=int, default=None)
-    coords.add_argument("-zmax", type=int, default=None)
+                        help="Bbox txt file from sc_crop detect — alternative to passing coordinates")
+    coords.add_argument("-xmin", type=int, default=None, metavar="N", help="x min (inclusive)")
+    coords.add_argument("-xmax", type=int, default=None, metavar="N", help="x max (inclusive)")
+    coords.add_argument("-ymin", type=int, default=None, metavar="N", help="y min (inclusive)")
+    coords.add_argument("-ymax", type=int, default=None, metavar="N", help="y max (inclusive)")
+    coords.add_argument("-zmin", type=int, default=None, metavar="N", help="z min (inclusive)")
+    coords.add_argument("-zmax", type=int, default=None, metavar="N", help="z max (inclusive)")
 
     # ── Crop options ──────────────────────────────────────────────────────────
     parser.add_argument("--las", action="store_true",
@@ -125,16 +125,24 @@ examples:
     pad.add_argument("--pad-ant",  type=float, default=None, dest="pad_anterior",  metavar="MM")
     pad.add_argument("--pad-post", type=float, default=None, dest="pad_posterior", metavar="MM")
     pad.add_argument("--pad-ap",   type=float, default=None, dest="pad_ap",        metavar="MM")
-    parser.add_argument("--conf", type=float, default=None)
-    parser.add_argument("--regularization", default=None, choices=["cls", "graphtrim", "none"])
-    parser.add_argument("--cls-conf", type=float, default=None, dest="cls_conf")
-    parser.add_argument("--no-onnx", dest="use_onnx", action="store_false")
+    parser.add_argument("--conf", type=float, default=None,
+                        help="Detection confidence threshold (default: from model config)")
+    parser.add_argument("--regularization", default=None, choices=["cls", "graphtrim", "none"],
+                        help="Post-processing regularization strategy (default: from model config)")
+    parser.add_argument("--cls-conf", type=float, default=None, dest="cls_conf",
+                        help="Confidence threshold for the classification head (cls regularization)")
+    parser.add_argument("--no-onnx", dest="use_onnx", action="store_false",
+                        help="Use PyTorch instead of ONNX for inference (requires ultralytics)")
     parser.set_defaults(use_onnx=True)
-    parser.add_argument("--device", default=None)
+    parser.add_argument("--device", default=None,
+                        help="Inference device: 'cpu', 'cuda', 'cuda:0', … (default: auto)")
     parser.add_argument("--norm-scope", dest="norm_scope", default="volume",
-                        choices=["volume", "slice"])
-    parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--time",  action="store_true")
+                        choices=["volume", "slice"],
+                        help="Intensity normalisation scope: per volume (default) or per slice")
+    parser.add_argument("--debug", action="store_true",
+                        help="Save debug panel image alongside the output")
+    parser.add_argument("--time",  action="store_true",
+                        help="Print timing breakdown for each detection step")
 
     args = parser.parse_args()
     input_path = args.input_flag or args.input
