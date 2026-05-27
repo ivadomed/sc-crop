@@ -29,44 +29,12 @@ print(sc_crop.__model_version__)  # version du modèle,   ex. "v0.0.3"
 
 ---
 
-## Procédure de release (résumé)
+## Procédure de release
 
-### 1. Entraîner et exporter le modèle
+Modifier les 4 variables en haut de `scripts/release.sh` dans [model_cropping_sc_contrast-agnostic_yolo](https://github.com/ivadomed/model_cropping_sc_contrast-agnostic_yolo), puis lancer :
+
 ```bash
-cd model_cropping_sc_contrast-agnostic_yolo
-python scripts/export_model.py --run-dir checkpoints/<run_id> --version X.Y
-# → model.onnx, model.pt, cls_model.onnx, cls_model.pt, config.yaml
+bash scripts/release.sh
 ```
 
-### 2. Créer la release GitHub du modèle sur ivadomed/sc-crop
-```bash
-gh release create vX.Y model.onnx model.pt cls_model.onnx cls_model.pt \
-  --title "sc-crop model vX.Y" \
-  --notes "YOLO26n axial 3ch si_res=10mm — run <run_id>"
-```
-
-### 3. Mettre à jour download.py
-Dans `sc_crop/download.py`, mettre à jour `_MODEL_TAG` et les SHA256 correspondants :
-```python
-_MODEL_TAG = "vX.Y"
-_ASSETS = {
-    "model.onnx":     {"url": "…", "sha256": "…"},
-    "cls_model.onnx": {"url": "…", "sha256": "…"},
-    "model.pt":       {"url": "…", "sha256": "…"},
-    "cls_model.pt":   {"url": "…", "sha256": "…"},
-}
-```
-
-### 4. Bumper la version du package
-Dans `pyproject.toml` : `version = "0.0.N"`
-
-### 5. Mettre à jour VERSIONS.md
-Ajouter une ligne dans le tableau ci-dessus.
-
-### 6. Committer et tagger
-```bash
-git add sc_crop/download.py pyproject.toml VERSIONS.md
-git commit -m "release: v0.0.N — model vX.Y (run <run_id>)"
-git tag v0.0.N
-git push && git push --tags
-```
+Le script orchestre automatiquement : export ONNX, calcul des SHA256, création de la release GitHub, tag des deux dépôts, mise à jour de `download.py` et de ce fichier, bump de version du package, commit + push.

@@ -298,3 +298,4 @@ Python ≥ 3.8. Core dependencies installed automatically: `nibabel`, `numpy`, `
 
 The detection model was trained using [ivadomed/model_cropping_sc_contrast-agnostic_yolo](https://github.com/ivadomed/model_cropping_sc_contrast-agnostic_yolo).
 The link between package versions, model versions, and training runs is documented in [VERSIONS.md](VERSIONS.md).
+To publish a new model version, see the release procedure in [VERSIONS.md](VERSIONS.md#procédure-de-release).
