@@ -103,27 +103,6 @@ crop_img = crop(nib.load("t2.nii.gz"), bbox)   # also works on t2_seg.nii.gz
 full_img = uncrop(crop_img, bbox)               # restore to the original space
 ```
 
-### Quickstart
-
-```python
-from sc_crop import detect, crop, uncrop
-import nibabel as nib
-
-img  = nib.load("t2.nii.gz")
-bbox = detect(img)                       # avoids loading the image twice
-crop_img = crop(img,           bbox)
-crop_seg = crop("t2_seg.nii.gz", bbox)   # path or NIfTI
-
-full_img = uncrop(crop_img, bbox)        # inverse of crop()
-```
-
-A runnable version that auto-downloads the test images is available in [`examples/quickstart.py`](examples/quickstart.py):
-
-```bash
-git clone https://github.com/ivadomed/sc-crop.git
-python sc-crop/examples/quickstart.py
-```
-
 ### Padding
 
 All values define the margin **around the detected spinal cord**, in mm. Priority per face: **individual > symmetric > default**.
