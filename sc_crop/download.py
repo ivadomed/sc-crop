@@ -18,25 +18,25 @@ import hashlib
 import urllib.request
 from pathlib import Path
 
-_MODEL_TAG = "v0.0.3"
+_MODEL_TAG = "v0.0.6"
 _BASE_URL = f"https://github.com/ivadomed/sc-crop/releases/download/{_MODEL_TAG}"
 
 _ASSETS = {
     "model.onnx": {
         "url": f"{_BASE_URL}/model.onnx",
-        "sha256": "56961ddabba0a208a97ef2cb065001726b354d6adb5c1d979010e61f12070901",
+        "sha256": "aee8c7676fbb4965ed2f6de0c4b27ca9acfbd4330e310890ca2b39f603a1532a",
     },
     "cls_model.onnx": {
         "url": f"{_BASE_URL}/cls_model.onnx",
-        "sha256": "1153922fc4c39d19d3d475f0246252d10782aef428b11e1378fc040e4f71b61e",
+        "sha256": "7f304b78c87f9dc4b9cc01a2cc408f6872ec0e5acc918c2d550272483f3b2a43",
     },
     "model.pt": {
         "url": f"{_BASE_URL}/model.pt",
-        "sha256": "41f09145b8e297511a5d1d95dbb57438a83055e44368b635673d8dd2116bdf42",
+        "sha256": "3f1c3e746e6693ff908126cb0a0b8c4b096f96e51311562d40664d4aa32994ac",
     },
     "cls_model.pt": {
         "url": f"{_BASE_URL}/cls_model.pt",
-        "sha256": "2007ff7a59049378015239e6a8c80c463f13a18114ebc153daa89629e65defef",
+        "sha256": "333d3ecf4610dfd4e7605dbb4e2c2d361ea74a6fa37d922503483b07da53103d",
     },
 }
 
