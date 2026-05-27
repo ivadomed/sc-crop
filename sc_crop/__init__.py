@@ -30,6 +30,6 @@ from .download import (
     _MODEL_TAG,
 )
 
-__version__       = "0.0.9"
+__version__       = "0.1.0"
 __model_version__ = _MODEL_TAG
 MODEL_VERSION     = _MODEL_TAG

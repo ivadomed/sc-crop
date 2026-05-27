@@ -1,15 +1,21 @@
 """
 Command-line interface for sc_crop.
 
-Usage:
-    sc_crop t2.nii.gz                        # default: writes <stem>_bbox.txt (native, inclusive)
-    sc_crop t2.nii.gz --crop                 # also saves <stem>_crop.nii.gz (native orientation)
-    sc_crop t2.nii.gz --crop --las           # save crop in LAS orientation
-    sc_crop t2.nii.gz --crop --translate     # update affine for correct FSLeyes overlay
-    sc_crop t2.nii.gz --crop -o output.nii.gz
-    sc_crop t2.nii.gz --norm-scope slice     # per-slice normalisation (default: volume)
-    sc_crop t2.nii.gz --debug                # also saves <stem>_debug.png
-    sc_crop download                         # pre-download ONNX models
+Three modes, selected automatically from the arguments:
+
+  Detect (default — no coordinates):
+    sc_crop -i t2.nii.gz [-o bbox.txt]
+    sc_crop -i t2.nii.gz --detect [-o bbox.txt]
+
+  Crop (coordinates provided, or --crop flag):
+    sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
+    sc_crop -i t2.nii.gz --crop -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311 [-o out.nii.gz]
+
+  Detect + crop (--detect-crop flag):
+    sc_crop -i t2.nii.gz --detect-crop [-o out.nii.gz]
+
+  Download models:
+    sc_crop download
 """
 
 import argparse
@@ -21,6 +27,24 @@ import nibabel as nib
 from .crop import detect, crop, _write_bbox_txt, _stem, _warn_overwrite
 from .download import download
 
+GREEN, RESET = "\033[32m", "\033[0m"
+
+
+def _crop_from_coords(input_path, xmin, xmax, ymin, ymax, zmin, zmax,
+                      output, translate):
+    """Crop a NIfTI using explicit voxel coordinates."""
+    parent, stem = _stem(input_path)
+    bbox = {
+        "xmin": xmin, "xmax": xmax,
+        "ymin": ymin, "ymax": ymax,
+        "zmin": zmin, "zmax": zmax,
+    }
+    cropped   = crop(nib.load(input_path), bbox, translate=translate)
+    crop_path = Path(output) if output else parent / f"{stem}_crop.nii.gz"
+    _warn_overwrite(crop_path)
+    nib.save(cropped, crop_path)
+    print(f"Crop    : {crop_path}  shape={cropped.shape}")
+
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "download":
@@ -28,82 +52,104 @@ def main():
         return
 
     parser = argparse.ArgumentParser(
-        description="Detect spinal cord and output crop indices. Optionally crop the volume.",
+        description="Spinal cord detection and cropping.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-output:
-  <stem>_bbox.txt  — inclusive voxel indices in native image space (xmin xmax ymin ymax zmin zmax)
-  <stem>_crop.nii.gz  — cropped volume (only with --crop)
+modes:
+  detect (default)     sc_crop -i t2.nii.gz
+  crop from coords     sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
+  detect + crop        sc_crop -i t2.nii.gz --detect-crop
 
 examples:
-  sc_crop t2.nii.gz                                # bbox txt only
-  sc_crop t2.nii.gz --crop                         # + cropped volume (native orientation)
-  sc_crop t2.nii.gz --crop --las                   # + cropped volume in LAS orientation
-  sc_crop t2.nii.gz --crop -o my_crop.nii.gz       # explicit output path
-  sc_crop t2.nii.gz --crop --no-translate          # affine NOT updated (no FSLeyes overlay)
-  sc_crop t2.nii.gz --crop --pad-sup 50 --pad-inf 80   # custom SI padding
-  sc_crop t2.nii.gz --crop --pad-si 30            # symmetric SI padding
-  sc_crop t2.nii.gz --crop --time                 # print elapsed time per step
+  sc_crop -i t2.nii.gz                                            # detect → bbox.txt
+  sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
+  sc_crop -i t2.nii.gz --crop -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
+  sc_crop -i t2.nii.gz --detect-crop                             # detect + crop in one step
+  sc_crop -i t2.nii.gz --detect-crop --pad-sup 50 --pad-inf 80
+  sc_crop -i label.nii.gz --crop -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
 """,
     )
+
+    # ── Input / output ────────────────────────────────────────────────────────
     parser.add_argument("input", nargs="?",
                         help="Input NIfTI volume (.nii or .nii.gz)")
     parser.add_argument("-i", dest="input_flag", default=None,
-                        help="Input NIfTI volume (.nii or .nii.gz) — SCT-style alias for positional input")
+                        help="Input NIfTI volume — SCT-style alias for positional input")
     parser.add_argument("-o", "--output", default=None,
-                        help="Output path: crop volume if --crop, else bbox txt")
+                        help="Output path: bbox.txt (detect), cropped volume (crop/detect-crop)")
+
+    # ── Mode flags ────────────────────────────────────────────────────────────
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--detect",      action="store_true",
+                      help="Detect spinal cord and write bbox.txt (default mode)")
+    mode.add_argument("--crop",        action="store_true",
+                      help="Crop from coordinates (requires -xmin/-xmax/-ymin/-ymax/-zmin/-zmax)")
+    mode.add_argument("--detect-crop", dest="detect_crop", action="store_true",
+                      help="Detect spinal cord then crop in one step")
+
+    # ── Crop coordinates ──────────────────────────────────────────────────────
+    coords = parser.add_argument_group("crop coordinates (voxel indices, inclusive)")
+    coords.add_argument("-xmin", type=int, default=None)
+    coords.add_argument("-xmax", type=int, default=None)
+    coords.add_argument("-ymin", type=int, default=None)
+    coords.add_argument("-ymax", type=int, default=None)
+    coords.add_argument("-zmin", type=int, default=None)
+    coords.add_argument("-zmax", type=int, default=None)
+
+    # ── Crop options ──────────────────────────────────────────────────────────
+    parser.add_argument("--las", action="store_true",
+                        help="Output cropped volume in LAS orientation (detect-crop only)")
+    parser.add_argument("--no-translate", dest="translate", action="store_false",
+                        help="Do not update affine origin after cropping")
+    parser.set_defaults(translate=True)
+
+    # ── Detection options ─────────────────────────────────────────────────────
     parser.add_argument("--model", default=None,
                         help="Path to model.pt (override sc_crop/models/)")
-    parser.add_argument("--crop", action="store_true",
-                        help="Save the cropped volume (default: bbox txt only)")
-    parser.add_argument("--las", action="store_true",
-                        help="Output cropped volume in LAS orientation (requires --crop)")
-    parser.add_argument("--no-translate", dest="translate", action="store_false",
-                        help="Do not update affine (by default affine is updated for correct FSLeyes overlay)")
-    parser.set_defaults(translate=True)
-    pad = parser.add_argument_group("padding (mm) — individual > symmetric > default")
-    pad.add_argument("--pad-sup",  type=float, default=None, dest="pad_superior",
-                     metavar="MM", help="Superior padding mm (default 40)")
-    pad.add_argument("--pad-inf",  type=float, default=None, dest="pad_inferior",
-                     metavar="MM", help="Inferior padding mm (default 60)")
-    pad.add_argument("--pad-si",   type=float, default=None, dest="pad_si",
-                     metavar="MM", help="Symmetric SI — overridden by --pad-sup/inf")
-    pad.add_argument("--pad-left", type=float, default=None, dest="pad_left",
-                     metavar="MM", help="Left padding mm (default 10)")
-    pad.add_argument("--pad-right",type=float, default=None, dest="pad_right",
-                     metavar="MM", help="Right padding mm (default 10)")
-    pad.add_argument("--pad-rl",   type=float, default=None, dest="pad_rl",
-                     metavar="MM", help="Symmetric RL — overridden by --pad-left/right")
-    pad.add_argument("--pad-ant",  type=float, default=None, dest="pad_anterior",
-                     metavar="MM", help="Anterior padding mm (default 15)")
-    pad.add_argument("--pad-post", type=float, default=None, dest="pad_posterior",
-                     metavar="MM", help="Posterior padding mm (default 15)")
-    pad.add_argument("--pad-ap",   type=float, default=None, dest="pad_ap",
-                     metavar="MM", help="Symmetric AP — overridden by --pad-ant/post")
-    parser.add_argument("--conf", type=float, default=None,
-                        help="Detection confidence threshold (default: from config.yaml)")
-    parser.add_argument("--regularization", default=None, choices=["cls", "graphtrim", "none"],
-                        help="Regularization method (default: from config.yaml, usually 'cls')")
-    parser.add_argument("--cls-conf", type=float, default=None, dest="cls_conf",
-                        help="Classification confidence threshold for --regularization cls (default: 0.5)")
-    parser.add_argument("--no-onnx", dest="use_onnx", action="store_false",
-                        help="Use PyTorch .pt inference instead of ONNX Runtime (supports --device)")
+    pad = parser.add_argument_group("padding (mm, detect / detect-crop) — individual > symmetric > default")
+    pad.add_argument("--pad-sup",  type=float, default=None, dest="pad_superior",  metavar="MM")
+    pad.add_argument("--pad-inf",  type=float, default=None, dest="pad_inferior",  metavar="MM")
+    pad.add_argument("--pad-si",   type=float, default=None, dest="pad_si",        metavar="MM")
+    pad.add_argument("--pad-left", type=float, default=None, dest="pad_left",      metavar="MM")
+    pad.add_argument("--pad-right",type=float, default=None, dest="pad_right",     metavar="MM")
+    pad.add_argument("--pad-rl",   type=float, default=None, dest="pad_rl",        metavar="MM")
+    pad.add_argument("--pad-ant",  type=float, default=None, dest="pad_anterior",  metavar="MM")
+    pad.add_argument("--pad-post", type=float, default=None, dest="pad_posterior", metavar="MM")
+    pad.add_argument("--pad-ap",   type=float, default=None, dest="pad_ap",        metavar="MM")
+    parser.add_argument("--conf", type=float, default=None)
+    parser.add_argument("--regularization", default=None, choices=["cls", "graphtrim", "none"])
+    parser.add_argument("--cls-conf", type=float, default=None, dest="cls_conf")
+    parser.add_argument("--no-onnx", dest="use_onnx", action="store_false")
     parser.set_defaults(use_onnx=True)
-    parser.add_argument("--device", default=None,
-                        help="Inference device: cpu, cuda, mps — only with --no-onnx")
+    parser.add_argument("--device", default=None)
     parser.add_argument("--norm-scope", dest="norm_scope", default="volume",
-                        choices=["volume", "slice"],
-                        help="Normalisation scope: volume (default) computes percentiles once on "
-                             "the full volume; slice computes per-slice independently")
-    parser.add_argument("--debug", action="store_true",
-                        help="Save <stem>_debug.png: all slices with max-confidence bbox")
-    parser.add_argument("--time", action="store_true",
-                        help="Print elapsed time for each pipeline step")
+                        choices=["volume", "slice"])
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--time",  action="store_true")
+
     args = parser.parse_args()
     input_path = args.input_flag or args.input
     if not input_path:
         parser.error("an input file is required (positional or -i)")
 
+    coords_provided = any(v is not None for v in
+                          [args.xmin, args.xmax, args.ymin, args.ymax, args.zmin, args.zmax])
+
+    # ── Mode: crop from coordinates ───────────────────────────────────────────
+    if args.crop or coords_provided:
+        missing = [name for name, val in [
+            ("-xmin", args.xmin), ("-xmax", args.xmax),
+            ("-ymin", args.ymin), ("-ymax", args.ymax),
+            ("-zmin", args.zmin), ("-zmax", args.zmax),
+        ] if val is None]
+        if missing:
+            parser.error(f"crop mode requires all 6 coordinates — missing: {', '.join(missing)}")
+        _crop_from_coords(input_path,
+                          args.xmin, args.xmax, args.ymin, args.ymax, args.zmin, args.zmax,
+                          args.output, args.translate)
+        return
+
+    # ── Detect (shared by detect and detect-crop modes) ───────────────────────
     bbox = detect(
         input_path,
         model_path    = args.model,
@@ -127,20 +173,12 @@ examples:
     )
 
     parent, stem = _stem(input_path)
+    xmin, xmax = bbox["xmin"], bbox["xmax"]
+    ymin, ymax = bbox["ymin"], bbox["ymax"]
+    zmin, zmax = bbox["zmin"], bbox["zmax"]
 
-    # ── Write bbox.txt ────────────────────────────────────────────────────────
-    from .crop import BBox3D
-    bbox_orig = BBox3D(
-        bbox["xmin"], bbox["xmax"] + 1,
-        bbox["ymin"], bbox["ymax"] + 1,
-        bbox["zmin"], bbox["zmax"] + 1,
-    )
-    bbox_txt = Path(args.output) if (args.output and not args.crop) else parent / f"{stem}_bbox.txt"
-    _write_bbox_txt(bbox_txt, bbox_orig)
-    print(f"          → {bbox_txt}")
-
-    # ── Crop ──────────────────────────────────────────────────────────────────
-    if args.crop:
+    # ── Mode: detect-crop ─────────────────────────────────────────────────────
+    if args.detect_crop:
         if args.las:
             cropped   = bbox["_bbox_pad_las"].crop(bbox["_img_las"], translate=args.translate)
             crop_path = Path(args.output) if args.output else parent / f"{stem}_crop_las.nii.gz"
@@ -150,17 +188,23 @@ examples:
         _warn_overwrite(crop_path)
         nib.save(cropped, crop_path)
         print(f"Crop    : {crop_path}  shape={cropped.shape}")
+        return
 
-    xmin, xmax = bbox["xmin"], bbox["xmax"]
-    ymin, ymax = bbox["ymin"], bbox["ymax"]
-    zmin, zmax = bbox["zmin"], bbox["zmax"]
-    inp        = input_path
+    # ── Mode: detect only ─────────────────────────────────────────────────────
+    from .crop import BBox3D
+    bbox_orig = BBox3D(
+        bbox["xmin"], bbox["xmax"] + 1,
+        bbox["ymin"], bbox["ymax"] + 1,
+        bbox["zmin"], bbox["zmax"] + 1,
+    )
+    bbox_txt = Path(args.output) if args.output else parent / f"{stem}_bbox.txt"
+    _write_bbox_txt(bbox_txt, bbox_orig)
+    print(f"          → {bbox_txt}")
 
-    GREEN, RESET = "\033[32m", "\033[0m"
-    print(f"\nTo crop with SCT (if installed):")
-    print(f"  {GREEN}sct_crop_image -i {inp} -xmin {xmin} -xmax {xmax} -ymin {ymin} -ymax {ymax} -zmin {zmin} -zmax {zmax}{RESET}")
     print(f"\nTo crop with sc_crop:")
-    print(f"  {GREEN}sc_crop -i {inp} --crop{RESET}")
+    print(f"  {GREEN}sc_crop --crop -i {input_path} -xmin {xmin} -xmax {xmax} -ymin {ymin} -ymax {ymax} -zmin {zmin} -zmax {zmax}{RESET}")
+    print(f"\nTo crop with SCT (if installed):")
+    print(f"  {GREEN}sct_crop_image -i {input_path} -xmin {xmin} -xmax {xmax} -ymin {ymin} -ymax {ymax} -zmin {zmin} -zmax {zmax}{RESET}")
 
 
 if __name__ == "__main__":
