@@ -20,19 +20,19 @@ Fresh dedicated environment (for testing):
 
 ```bash
 conda create -n sc_crop python=3.12 && conda activate sc_crop
-pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.5
+pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.7
 ```
 
 Or into an existing environment:
 
 ```bash
-pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.5
+pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.7
 ```
 
 For GPU inference and batch preprocessing (adds `ultralytics`):
 
 ```bash
-pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.5"
+pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.7"
 ```
 
 ---
@@ -205,9 +205,7 @@ nib.save(seg_full, "new_subject_seg.nii.gz")
 
 sc-crop fits naturally before nnUNet: crop the raw dataset first, then run the standard nnUNet pipeline on the cropped images.
 
-**Preprocessing (once, before training):**
-
-Use the Python API so that image and label always share the exact same bbox — `detect()` is called once per subject, then `crop()` is applied to both:
+**Preprocessing (once, before training):** use the Python API so that image and label always share the exact same bbox — `detect()` is called once per subject, then `crop()` is applied to both:
 
 ```python
 from sc_crop import detect, crop
@@ -224,7 +222,7 @@ for subject in subjects:
 
 **Training:** run `nnUNetv2_plan_and_preprocess` and `nnUNetv2_train` on the cropped dataset as usual.
 
-**Inference on a new image:**
+**Inference on a new image:** apply the same padding, crop, run nnUNet, then restore to the original space:
 
 ```python
 from sc_crop import detect, crop, restore_segmentation
@@ -233,11 +231,10 @@ import nibabel as nib
 PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
            pad_anterior=15, pad_posterior=15)  # same as training
 
-bbox      = detect("new_subject.nii.gz", **PAD)
+bbox     = detect("new_subject.nii.gz", **PAD)
 crop_img = crop(nib.load("new_subject.nii.gz"), bbox)
 nib.save(crop_img, "new_subject_crop.nii.gz")
 
-# Run nnUNet predictor on the cropped image
 # nnUNetv2_predict -i new_subject_crop.nii.gz -o seg_crop/ ...
 
 seg_full = restore_segmentation(nib.load("seg_crop/new_subject_crop.nii.gz"), bbox)
