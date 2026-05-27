@@ -39,7 +39,7 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.5"
 
 ## CLI
 
-**Quick test with the SCT tutorial image:**
+**Quick test with the [SCT tutorial image](https://spinalcordtoolbox.com/stable/user_section/tutorials/segmentation/before-starting.html):**
 
 ```bash
 curl -L https://github.com/spinalcordtoolbox/sct_tutorial_data/releases/download/r20260508/data_spinalcord-segmentation.zip -o /tmp/sct_tutorial.zip
