@@ -29,7 +29,7 @@ Or into an existing environment:
 pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.7
 ```
 
-For GPU inference and batch preprocessing (adds `ultralytics`):
+For GPU inference (adds `ultralytics`):
 
 ```bash
 pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.7"
