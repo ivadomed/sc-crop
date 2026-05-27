@@ -132,10 +132,17 @@ def main():
     p.add_argument("-o", default=None, help="Output segmentation mask (.nii.gz) — defaults to <input>_seg.nii.gz")
     args = p.parse_args()
 
-    input_path = args.i or _get_tutorial_image()
-    output_path = args.o or str(Path(input_path).with_name(
-        Path(input_path).name.replace(".nii.gz", "").replace(".nii", "") + "_seg.nii.gz"
-    ))
+    auto_download = args.i is None
+    input_path    = args.i or _get_tutorial_image()
+
+    stem = Path(input_path).name.replace(".nii.gz", "").replace(".nii", "")
+    if args.o:
+        output_path = args.o
+    elif auto_download:
+        output_path = str(Path.cwd() / f"{stem}_seg.nii.gz")  # don't overwrite cached seg
+    else:
+        output_path = str(Path(input_path).with_name(f"{stem}_seg.nii.gz"))
+
     infer(input_path, output_path)
 
 

@@ -20,19 +20,19 @@ Fresh dedicated environment (for testing):
 
 ```bash
 conda create -n sc_crop python=3.12 && conda activate sc_crop
-pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.8
+pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.9
 ```
 
 Or into an existing environment:
 
 ```bash
-pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.8
+pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.9
 ```
 
 For GPU inference (adds `ultralytics`):
 
 ```bash
-pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.8"
+pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.9"
 ```
 
 ---
