@@ -88,8 +88,6 @@ Three functions cover all use cases:
 | `crop(img, bbox)` | Crops any NIfTI volume (image or label) to the bounding box |
 | `uncrop(seg, bbox)` | Restores a segmentation from the cropped space back to the original full image space |
 
-`detect()` also accepts optional padding parameters (`pad_superior`, `pad_inferior`, `pad_left`, `pad_right`, `pad_anterior`, `pad_posterior` — in mm) and symmetric shorthands (`pad_si`, `pad_rl`, `pad_ap`). See [Padding](#padding) below.
-
 ```python
 img  = nib.load("t2.nii.gz")
 bbox = detect(img)                              # detect the spinal cord, return bounding box
@@ -103,31 +101,25 @@ crop_img = crop(nib.load("t2.nii.gz"), bbox)   # also works on t2_seg.nii.gz
 full_img = uncrop(crop_img, bbox)               # restore to the original space
 ```
 
-### Padding
+### Bounding box padding
 
-All values define the margin **around the detected spinal cord**, in mm. Priority per face: **individual > symmetric > default**.
+`detect()` adds a margin around the detected spinal cord (in mm). Values are clamped to the image boundaries. Priority per face: **individual > symmetric > default** (sup=40, inf=60, left=right=10, ant=post=15).
 
 ```python
-# Defaults: superior=40mm, inferior=60mm, left=right=10mm, anterior=posterior=15mm
-bbox = detect("t2.nii.gz")
-
 # Adjust SI only (most common)
-bbox = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
+bbox = detect(img, pad_superior=50, pad_inferior=80)
 
 # Symmetric SI
-bbox = detect("t2.nii.gz", pad_si=30)
+bbox = detect(img, pad_si=30)
 
 # Symmetric + override one face
-bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)
+bbox = detect(img, pad_si=30, pad_inferior=60)
 
 # Full per-face control
-bbox = detect("t2.nii.gz",
-             pad_superior=40, pad_inferior=60,
-             pad_left=10,     pad_right=10,
-             pad_anterior=15, pad_posterior=15)
+bbox = detect(img, pad_superior=40, pad_inferior=60,
+                   pad_left=10,     pad_right=10,
+                   pad_anterior=15, pad_posterior=15)
 ```
-
-Padding is always clamped to the image boundaries — no out-of-bounds indices are ever produced.
 
 ---
 
