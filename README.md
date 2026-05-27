@@ -280,7 +280,7 @@ Replace `fake_sc_segmentation()` with your own model to use in production.
 
 Python ≥ 3.8. Core dependencies installed automatically: `nibabel`, `numpy`, `pillow`, `pyyaml`, `onnxruntime`.
 
-`ultralytics` is optional — required only for GPU/PyTorch inference (`use_onnx=False`), the debug panel (`debug=True`), and batch preprocessing (`preprocess_dataset`). Install with the `[yolo]` extra above.
+`ultralytics` is optional — required only for GPU/PyTorch inference (`use_onnx=False`) and the debug panel (`debug=True`). Install with the `[yolo]` extra above.
 
 ---
 
