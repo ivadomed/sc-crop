@@ -90,26 +90,14 @@ Three functions cover all use cases:
 
 `detect()` also accepts optional padding parameters (`pad_superior`, `pad_inferior`, `pad_left`, `pad_right`, `pad_anterior`, `pad_posterior` — in mm) and symmetric shorthands (`pad_si`, `pad_rl`, `pad_ap`). See [Padding](#padding) below.
 
-### detect()
-
-Runs the spinal cord detector and returns a `bbox` dict with voxel coordinates `xmin, xmax, ymin, ymax, zmin, zmax` (inclusive, native space) and `original_axcodes`. No files are written.
-
 ```python
 bbox = detect("t2.nii.gz")
 ```
-
-### crop()
-
-Crops any NIfTI volume in the same space using the bbox — call it once per volume (image, label, …) with the same bbox:
 
 ```python
 crop_img = crop(nib.load("t2.nii.gz"),     bbox)
 crop_seg = crop(nib.load("t2_seg.nii.gz"), bbox)
 ```
-
-### restore_segmentation()
-
-Restores a segmentation produced in the cropped space back to the original full image space and affine:
 
 ```python
 seg_full = restore_segmentation(seg_crop, bbox)
