@@ -44,8 +44,6 @@ from typing import Optional
 import nibabel as nib
 import numpy as np
 from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
-from tqdm import tqdm
-
 from .crop import (
     BBox3D,
     _resolve_padding,
@@ -319,6 +317,8 @@ def preprocess_dataset(
     Returns:
         Path to the created dataset directory.
     """
+    from tqdm import tqdm  # optional dep — only needed for batch preprocessing
+
     if (dataset_dir is None) == (datalist_dir is None):
         raise ValueError("Provide exactly one of dataset_dir or datalist_dir.")
 

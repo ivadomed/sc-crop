@@ -32,6 +32,6 @@ from .download import (
 )
 from .nnunet import preprocess_dataset
 
-__version__       = "0.0.5"
+__version__       = "0.0.6"
 __model_version__ = _MODEL_TAG
 MODEL_VERSION     = _MODEL_TAG
