@@ -95,8 +95,14 @@ img = nib.load("t2.nii.gz")         # also works on t2_seg.nii.gz
 ```
 
 ```python
-bbox     = detect(img)           # detect the spinal cord, return bounding box
-crop_img = crop(img, bbox)       # crop to the bounding box
+bbox     = detect(img)            # detect the spinal cord, return bounding box
+```
+
+```python
+crop_img = crop(img, bbox)        # crop to the bounding box
+```
+
+```python
 full_img = uncrop(crop_img, bbox) # restore to the original space
 ```
 
