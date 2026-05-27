@@ -84,9 +84,11 @@ Three functions cover all use cases:
 
 | Function | Description |
 |---|---|
-| `detect(img_path, ...)` | Runs the SC detector and returns the bounding box coordinates |
+| `detect(img_path)` | Runs the SC detector and returns the bounding box coordinates |
 | `crop(img, bbox)` | Crops any NIfTI volume (image or label) to the bounding box |
 | `restore_segmentation(seg, bbox)` | Restores a segmentation from the cropped space back to the original full image space |
+
+`detect()` also accepts optional padding parameters (`pad_superior`, `pad_inferior`, `pad_left`, `pad_right`, `pad_anterior`, `pad_posterior` — in mm) and symmetric shorthands (`pad_si`, `pad_rl`, `pad_ap`). See [Padding](#padding) below.
 
 ### detect()
 
