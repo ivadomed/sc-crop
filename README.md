@@ -55,7 +55,7 @@ unzip sct_tutorial.zip
 sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_bbox.txt
 ```
 
-_The command also prints a ready-to-use `sct_crop_image` command (if [SCT](https://spinalcordtoolbox.com) is installed)._
+_The command prints a ready-to-use `sct_crop_image` command to crop the image using the detected coordinates (if [SCT](https://spinalcordtoolbox.com) is installed)._
 
 ### Crop the volume
 
@@ -63,14 +63,16 @@ _The command also prints a ready-to-use `sct_crop_image` command (if [SCT](https
 sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_crop.nii.gz --crop
 ```
 
+### Adjust the bounding box margin
+
 You can define a margin around the detected spinal cord (mm, clamped to image boundaries). Defaults: `sup=40, inf=60, left=right=10, ant=post=15`. Priority: individual (e.g. `--pad-sup`) > symmetric (e.g. `--pad-si`) > default.
 
 ```bash
-sc_crop t2.nii.gz --crop --pad-sup 50 --pad-inf 80 --pad-left 10 --pad-right 10 --pad-ant 15 --pad-post 15
+sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_crop.nii.gz --crop --pad-sup 50 --pad-inf 80 --pad-left 10 --pad-right 10 --pad-ant 15 --pad-post 15
 ```
 
 ```bash
-sc_crop t2.nii.gz --crop --pad-si 30 --pad-rl 10 --pad-ap 15
+sc_crop -i single_subject/data/t2/t2.nii.gz -o t2_crop.nii.gz --crop --pad-si 30 --pad-rl 10 --pad-ap 15
 ```
 
 Run `sc_crop --help` for all options.
