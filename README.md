@@ -91,19 +91,16 @@ Three functions cover all use cases:
 `detect()` also accepts optional padding parameters (`pad_superior`, `pad_inferior`, `pad_left`, `pad_right`, `pad_anterior`, `pad_posterior` — in mm) and symmetric shorthands (`pad_si`, `pad_rl`, `pad_ap`). See [Padding](#padding) below.
 
 ```python
-img = nib.load("t2.nii.gz")         # also works on t2_seg.nii.gz
+img  = nib.load("t2.nii.gz")
+bbox = detect(img)                              # detect the spinal cord, return bounding box
 ```
 
 ```python
-bbox     = detect(img)            # detect the spinal cord, return bounding box
+crop_img = crop(nib.load("t2.nii.gz"), bbox)   # also works on t2_seg.nii.gz
 ```
 
 ```python
-crop_img = crop(img, bbox)        # crop to the bounding box
-```
-
-```python
-full_img = uncrop(crop_img, bbox) # restore to the original space
+full_img = uncrop(crop_img, bbox)               # restore to the original space
 ```
 
 ### Quickstart
