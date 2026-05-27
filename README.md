@@ -16,16 +16,16 @@ Works on both **MRI and CT**, across contrasts (T1, T2, MP2RAGE, DWI…), field 
 
 ## Install
 
-Into an existing environment:
-
-```bash
-pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.5
-```
-
-Or into a fresh dedicated environment (recommended for testing):
+Fresh dedicated environment (recommended):
 
 ```bash
 conda create -n sc_crop python=3.12 && conda activate sc_crop
+pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.5
+```
+
+Or into an existing environment:
+
+```bash
 pip install git+https://github.com/ivadomed/sc-crop.git@v0.0.5
 ```
 
@@ -38,6 +38,8 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.0.5"
 ---
 
 ## CLI
+
+> The environment where sc-crop was installed must be active for the `sc_crop` command to be available.
 
 **Quick test with the [SCT tutorial image](https://spinalcordtoolbox.com/stable/user_section/tutorials/segmentation/before-starting.html):**
 
