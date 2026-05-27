@@ -41,11 +41,12 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.1.4"
 
 > The environment where sc-crop was installed must be active for the `sc_crop` command to be available.
 
-### Quick test — download the test image
+### Quick test — download the test images
 
 ```bash
 mkdir ~/sc-crop-test && cd ~/sc-crop-test
 curl -L https://github.com/ivadomed/sc-crop/releases/download/test-data/t2.nii.gz -o t2.nii.gz
+curl -L https://github.com/ivadomed/sc-crop/releases/download/test-data/t2_seg.nii.gz -o t2_seg.nii.gz
 ```
 
 ### Get the bounding box coordinates
