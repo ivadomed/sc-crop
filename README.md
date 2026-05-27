@@ -183,26 +183,39 @@ nib.save(seg_full, "new_subject_seg.nii.gz")
 
 ### nnUNet integration
 
-sc-crop fits naturally before nnUNet: crop the raw dataset first, then run the standard nnUNet pipeline on the cropped images.
+sc-crop is applied **before** nnUNet's own preprocessing. The cropped images go directly into the nnUNet raw dataset folder; nnUNet never sees the original full volumes.
 
-**Preprocessing (once, before training):** use the Python API so that image and label always share the exact same bbox — `detect()` is called once per subject, then `crop()` is applied to both:
+**Step 1 — Populate `nnUNet_raw/Dataset{ID}_{Name}/`**
+
+nnUNet expects images in `imagesTr/` named `{case}_{0000}.nii.gz` and labels in `labelsTr/` named `{case}.nii.gz`. Crop image and label with the same bbox before saving there:
 
 ```python
 from sc_crop import detect, crop
 import nibabel as nib
+from pathlib import Path
 
+RAW = Path("nnUNet_raw/Dataset001_MyTask")
 PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
            pad_anterior=15, pad_posterior=15)
 
-for subject in subjects:
-    bbox   = detect(subject.image, **PAD)                             # detect once
-    nib.save(crop(nib.load(subject.image), bbox), subject.image_crop) # same bbox
-    nib.save(crop(nib.load(subject.label), bbox), subject.label_crop) # same bbox
+for case_id, img_path, lbl_path in subjects:
+    bbox = detect(img_path, **PAD)                                          # detect once
+    nib.save(crop(nib.load(img_path), bbox),
+             RAW / "imagesTr" / f"{case_id}_0000.nii.gz")                  # cropped image
+    nib.save(crop(nib.load(lbl_path), bbox),
+             RAW / "labelsTr" / f"{case_id}.nii.gz")                       # same bbox
 ```
 
-**Training:** run `nnUNetv2_plan_and_preprocess` and `nnUNetv2_train` on the cropped dataset as usual.
+**Step 2 — Run the standard nnUNet pipeline**
 
-**Inference on a new image:** apply the same padding, crop, run nnUNet, then restore to the original space:
+```bash
+nnUNetv2_plan_and_preprocess -d 001 --verify_dataset_integrity
+nnUNetv2_train 001 3d_fullres 0
+```
+
+**Step 3 — Inference on a new image**
+
+Crop the image first, run `nnUNetv2_predict` on the cropped volume, then restore the segmentation to the original space with `uncrop`:
 
 ```python
 from sc_crop import detect, crop, uncrop
@@ -213,11 +226,15 @@ PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
 
 bbox     = detect("new_subject.nii.gz", **PAD)
 crop_img = crop(nib.load("new_subject.nii.gz"), bbox)
-nib.save(crop_img, "new_subject_crop.nii.gz")
+nib.save(crop_img, "nnunet_input/new_subject_0000.nii.gz")
+```
 
-# nnUNetv2_predict -i new_subject_crop.nii.gz -o seg_crop/ ...
+```bash
+nnUNetv2_predict -d 001 -c 3d_fullres -i nnunet_input/ -o nnunet_output/
+```
 
-seg_full = uncrop(nib.load("seg_crop/new_subject_crop.nii.gz"), bbox)
+```python
+seg_full = uncrop(nib.load("nnunet_output/new_subject.nii.gz"), bbox)
 nib.save(seg_full, "new_subject_seg.nii.gz")
 ```
 
