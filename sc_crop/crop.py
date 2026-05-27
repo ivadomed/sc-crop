@@ -560,7 +560,7 @@ def _write_bbox_txt(path: Path, bbox: BBox3D) -> None:
 
 # ─── Detection pipeline ───────────────────────────────────────────────────────
 
-def detect(img_path: str,
+def detect(img_path: "str | Path | nib.Nifti1Image",
            config: dict | None = None,
            model_path: str | None = None,
            pad_superior: float | None = None,
@@ -586,7 +586,8 @@ def detect(img_path: str,
     pass the returned context to crop() for any number of volumes (image, labels…).
 
     Args:
-        img_path:       Path to the input NIfTI image (any orientation, any contrast).
+        img_path:       Path to the input NIfTI image (str or Path), or a pre-loaded
+                        nib.Nifti1Image (any orientation, any contrast).
         config:         Config dict (loaded from config.yaml if None).
         model_path:     Path to model file (auto-downloaded if None).
         pad_superior:   Superior padding mm (default 40). Individual > symmetric > default.
@@ -655,7 +656,13 @@ def detect(img_path: str,
         pad_ap=pad_ap, pad_anterior=pad_anterior, pad_posterior=pad_posterior,
     )
 
-    img              = nib.load(img_path)
+    if isinstance(img_path, nib.Nifti1Image):
+        img      = img_path
+        img_name = getattr(img.file_map.get("image"), "filename", None)
+        img_name = Path(img_name).name if img_name else "NIfTI"
+    else:
+        img      = nib.load(img_path)
+        img_name = Path(img_path).name
     original_ornt    = nib.io_orientation(img.affine)
     original_axcodes = "".join(str(a) for a in nib.aff2axcodes(img.affine))
     img_las          = reorient_to_las(img)
@@ -663,7 +670,7 @@ def detect(img_path: str,
     zooms            = tuple(float(v) for v in img_las.header.get_zooms()[:3])
     shape            = img_las.shape
 
-    print(f"Input   : {Path(img_path).name}  shape={img.shape}  ornt={original_axcodes}")
+    print(f"Input   : {img_name}  shape={img.shape}  ornt={original_axcodes}")
     t0 = _tick("load + reorient", t0)
 
     if use_onnx:
@@ -758,15 +765,17 @@ def detect(img_path: str,
 # ─── High-level inference helpers ─────────────────────────────────────────────
 
 
-def crop(img: "nib.Nifti1Image", bbox: dict, translate: bool = True) -> "nib.Nifti1Image":
+def crop(img: "str | Path | nib.Nifti1Image", bbox: dict,
+         translate: bool = True) -> "nib.Nifti1Image":
     """Crop a NIfTI image to the bbox detected by detect().
 
     Works for any volume in the same space as the image passed to detect() —
     use it for both the image and its label(s).
 
     Args:
-        img:       NIfTI image to crop.
-        bbox:       Context dict returned by detect() or detect_and_crop().
+        img:       NIfTI image to crop — str/Path (loaded automatically) or
+                   a pre-loaded nib.Nifti1Image.
+        bbox:      Context dict returned by detect() or detect_and_crop().
         translate: If True (default), update the affine so the crop sits at the
                    correct world position (required for FSLeyes overlay).
 
@@ -776,12 +785,14 @@ def crop(img: "nib.Nifti1Image", bbox: dict, translate: bool = True) -> "nib.Nif
     Example::
 
         from sc_crop import detect, crop
-        import nibabel as nib
 
-        bbox        = detect("t2.nii.gz")
-        crop_img   = crop(nib.load("t2.nii.gz"),       bbox)
-        crop_label = crop(nib.load("t2_label.nii.gz"), bbox)
+        img  = nib.load("t2.nii.gz")
+        bbox = detect(img)                    # pass NIfTI directly
+        crop_img   = crop(img,           bbox)
+        crop_label = crop("t2_seg.nii.gz", bbox)  # or pass a path
     """
+    if not isinstance(img, nib.Nifti1Image):
+        img = nib.load(img)
     xmin, xmax = bbox["xmin"], bbox["xmax"]
     ymin, ymax = bbox["ymin"], bbox["ymax"]
     zmin, zmax = bbox["zmin"], bbox["zmax"]

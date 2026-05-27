@@ -91,11 +91,11 @@ Three functions cover all use cases:
 `detect()` also accepts optional padding parameters (`pad_superior`, `pad_inferior`, `pad_left`, `pad_right`, `pad_anterior`, `pad_posterior` — in mm) and symmetric shorthands (`pad_si`, `pad_rl`, `pad_ap`). See [Padding](#padding) below.
 
 ```python
-bbox = detect("t2.nii.gz")
+bbox = detect("t2.nii.gz")          # path or nib.Nifti1Image
 ```
 
 ```python
-crop_img = crop(nib.load("t2.nii.gz"), bbox)  # also works on t2_seg.nii.gz
+crop_img = crop("t2.nii.gz", bbox)  # also works on t2_seg.nii.gz
 ```
 
 ```python
@@ -108,10 +108,12 @@ full_img = uncrop(crop_img, bbox)
 from sc_crop import detect, crop, uncrop
 import nibabel as nib
 
-bbox        = detect("t2.nii.gz")
-crop_img = crop(nib.load("t2.nii.gz"), bbox)  # also works on t2_seg.nii.gz
+img  = nib.load("t2.nii.gz")
+bbox = detect(img)                       # avoids loading the image twice
+crop_img = crop(img,           bbox)
+crop_seg = crop("t2_seg.nii.gz", bbox)   # path or NIfTI
 
-full_img = uncrop(crop_img, bbox)    # inverse of crop()
+full_img = uncrop(crop_img, bbox)        # inverse of crop()
 ```
 
 A runnable version that auto-downloads the test images is available in [`examples/quickstart.py`](examples/quickstart.py):

@@ -48,18 +48,19 @@ def main():
     seg_path = args.seg or _download("t2_seg.nii.gz")
 
     # ── 1. Detect ─────────────────────────────────────────────────────────────
-    bbox = detect(img_path)
+    img  = nib.load(img_path)
+    bbox = detect(img)                        # pass NIfTI to avoid loading twice
     print(f"bbox  : x[{bbox['xmin']}:{bbox['xmax']}] "
           f"y[{bbox['ymin']}:{bbox['ymax']}] "
           f"z[{bbox['zmin']}:{bbox['zmax']}]")
 
     # ── 2. Crop image and label with the same bbox ────────────────────────────
-    crop_img = crop(nib.load(img_path), bbox)
-    crop_seg = crop(nib.load(seg_path), bbox)
+    crop_img = crop(img,      bbox)           # NIfTI already loaded
+    crop_seg = crop(seg_path, bbox)           # path — loaded automatically
     assert crop_img.shape == crop_seg.shape
-    print(f"crop  : {nib.load(img_path).shape} → {crop_img.shape}")
+    print(f"crop  : {img.shape} → {crop_img.shape}")
 
-    # ── 3. Restore segmentation to the original space ─────────────────────────
+    # ── 3. Restore to the original space ──────────────────────────────────────
     seg_full = uncrop(crop_seg, bbox)
     assert seg_full.shape == nib.load(img_path).shape[:3]
     assert np.array_equal(np.asarray(seg_full.dataobj),
