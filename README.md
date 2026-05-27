@@ -95,11 +95,11 @@ bbox = detect("t2.nii.gz")
 ```
 
 ```python
-cropped_img = crop(nib.load("t2.nii.gz"), bbox)  # also works on t2_seg.nii.gz
+crop_img = crop(nib.load("t2.nii.gz"), bbox)  # also works on t2_seg.nii.gz
 ```
 
 ```python
-full_img = uncrop(cropped_img, bbox)
+full_img = uncrop(crop_img, bbox)
 ```
 
 ### Quickstart
@@ -109,9 +109,9 @@ from sc_crop import detect, crop, uncrop
 import nibabel as nib
 
 bbox        = detect("t2.nii.gz")
-cropped_img = crop(nib.load("t2.nii.gz"), bbox)  # also works on t2_seg.nii.gz
+crop_img = crop(nib.load("t2.nii.gz"), bbox)  # also works on t2_seg.nii.gz
 
-full_img = uncrop(cropped_img, bbox)    # inverse of crop()
+full_img = uncrop(crop_img, bbox)    # inverse of crop()
 ```
 
 A runnable version that auto-downloads the test images is available in [`examples/quickstart.py`](examples/quickstart.py):
