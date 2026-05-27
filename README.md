@@ -95,12 +95,12 @@ bbox = detect("t2.nii.gz")
 ```
 
 ```python
-crop_img = crop(nib.load("t2.nii.gz"),     bbox)
-crop_seg = crop(nib.load("t2_seg.nii.gz"), bbox)
+crop_img   = crop(nib.load("t2.nii.gz"),     bbox)  # also works on t2_seg.nii.gz
+crop_label = crop(nib.load("t2_seg.nii.gz"), bbox)
 ```
 
 ```python
-seg_full = uncrop(seg_crop, bbox)
+img_full = uncrop(crop_img, bbox)
 ```
 
 ### Quickstart
@@ -109,11 +109,11 @@ seg_full = uncrop(seg_crop, bbox)
 from sc_crop import detect, crop, uncrop
 import nibabel as nib
 
-bbox     = detect("t2.nii.gz")
-crop_img = crop(nib.load("t2.nii.gz"),     bbox)  # crop image
-crop_seg = crop(nib.load("t2_seg.nii.gz"), bbox)  # crop label with same bbox
+bbox       = detect("t2.nii.gz")
+crop_img   = crop(nib.load("t2.nii.gz"),     bbox)  # also works on t2_seg.nii.gz
+crop_label = crop(nib.load("t2_seg.nii.gz"), bbox)
 
-seg_full = uncrop(crop_seg, bbox)    # restore to original space
+img_full = uncrop(crop_img, bbox)    # inverse of crop()
 ```
 
 A runnable version that auto-downloads the test images is available in [`examples/quickstart.py`](examples/quickstart.py):
