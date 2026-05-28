@@ -71,7 +71,7 @@ def load_config() -> dict:
     """Load config.yaml bundled with the package."""
     import importlib.resources
     import yaml
-    config_path = importlib.resources.files("sc_crop").joinpath("models/config.yaml")
+    config_path = importlib.resources.files("sc_crop").joinpath("config.yaml")
     return yaml.safe_load(Path(config_path).read_text())
 
 

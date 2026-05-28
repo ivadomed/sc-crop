@@ -1,13 +1,15 @@
 """
 Model download for sc_crop.
 
-Models are cached in ~/.cache/sc_crop/ (shared across all conda envs and venvs on
-the machine). On every load, the SHA256 of the cached file is checked against the
-value pinned in this module — if it mismatches (corruption or stale version), the
-file is re-downloaded automatically.
+Models are cached in ~/.cache/sc_crop/<model_version>/ so multiple versions of
+sc-crop installed in different envs can coexist without interfering. On every load,
+the SHA256 of the cached file is verified — if it mismatches, the file is re-downloaded.
 
 The model version (_MODEL_TAG) is intentionally decoupled from the package version:
 upgrading sc_crop code does not force a model re-download unless _ASSETS changes.
+
+To reclaim disk space from old model versions:
+    rm -rf ~/.cache/sc_crop/v0.0.5   # remove a specific old version
 
 Usage:
     sc_crop download           # optional pre-download; happens automatically on first use
@@ -40,7 +42,7 @@ _ASSETS = {
     },
 }
 
-_CACHE_DIR = Path.home() / ".cache" / "sc_crop"
+_CACHE_DIR = Path.home() / ".cache" / "sc_crop" / _MODEL_TAG
 
 
 def _sha256(path: Path) -> str:
