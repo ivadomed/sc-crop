@@ -23,15 +23,11 @@ conda create -n sc_crop python=3.13 && conda activate sc_crop
 pip install git+https://github.com/ivadomed/sc-crop.git@v0.1.6
 ```
 
-> **Python version** — sc-crop supports Python ≥ 3.8. **Python 3.13** is recommended for a fresh environment: released October 2024, in active support until 2029, all sc-crop dependencies ship native wheels for it. Python 3.14 also works. Python 3.9 reached end-of-life October 2025 — do not use for new installs.
-
 Or into an existing environment:
 
 ```bash
 pip install git+https://github.com/ivadomed/sc-crop.git@v0.1.6
 ```
-
-sc-crop integrates cleanly into environments that already have nibabel/numpy/scipy — including [SpinalCordToolbox](https://spinalcordtoolbox.com) (Python 3.10) and nnUNet (Python 3.9+). All core dependencies are already present in those environments; sc-crop adds only `onnxruntime` and `pillow` if not already installed.
 
 For GPU inference (adds `ultralytics`):
 
