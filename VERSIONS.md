@@ -6,6 +6,7 @@ Ce fichier documente le lien entre la version du **package sc-crop**, la version
 
 | Package | Modèle  | Run d'entraînement                                   | Commit training repo                     |
 |---------|---------|------------------------------------------------------|------------------------------------------|
+| v0.1.6 | v0.0.6 | *(même modèle que v0.1.5 — refactor package uniquement)* | — |
 | v0.1.5 | v0.0.6 | det=20260524_224406  cls=20260525_150625 | `bbdf79afaa1d` |
 | v0.0.5  | v0.0.3  | `pipeline_yolo26n_axial_200ep_20260430_2319582`      | `9c984315700344391d35817579478d6e7905222d` |
 | v0.0.4  | v0.0.3  | `pipeline_yolo26n_axial_200ep_20260430_2319582`      | `9c984315700344391d35817579478d6e7905222d` |
