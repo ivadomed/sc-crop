@@ -29,6 +29,8 @@ Or into an existing environment:
 pip install git+https://github.com/ivadomed/sc-crop.git@v0.1.6
 ```
 
+*To pin in a `requirements.txt`: add `sc-crop @ git+https://github.com/ivadomed/sc-crop.git@v0.1.6`*
+
 For GPU inference (adds `ultralytics`):
 
 ```bash
