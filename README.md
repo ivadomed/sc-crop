@@ -19,11 +19,11 @@ Works on both **MRI and CT**, across contrasts (T1, T2, MP2RAGE, DWI…), field 
 Fresh dedicated environment (for testing):
 
 ```bash
-conda create -n sc_crop python=3.12 && conda activate sc_crop
+conda create -n sc_crop python=3.13 && conda activate sc_crop
 pip install git+https://github.com/ivadomed/sc-crop.git@v0.1.6
 ```
 
-> **Python version** — sc-crop supports Python ≥ 3.8. Python 3.12 is recommended for a fresh environment: it is the latest stable release with active security support. Python 3.9 (end-of-life October 2025) and 3.10 are supported but not recommended for new installs.
+> **Python version** — sc-crop supports Python ≥ 3.8. **Python 3.13** is recommended for a fresh environment: released October 2024, in active support until 2029, all sc-crop dependencies ship native wheels for it. Python 3.14 also works. Python 3.9 reached end-of-life October 2025 — do not use for new installs.
 
 Or into an existing environment:
 
