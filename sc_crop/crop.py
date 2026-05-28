@@ -587,7 +587,7 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
            cls_conf: float | None = None,
            device: str | None = None,
            use_onnx: bool = True,
-           norm_scope: str = "volume",
+           norm_scope: str | None = None,
            debug: bool = False,
            time_steps: bool = False) -> dict:
     """Detect the spinal cord bounding box. Pure — no files written.
@@ -659,6 +659,7 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
     conf          = conf           if conf           is not None else config.get("conf", 0.1)
     regularization = regularization if regularization is not None else config.get("regularization", "cls")
     cls_conf      = cls_conf       if cls_conf       is not None else config.get("cls_conf", 0.5)
+    norm_scope    = norm_scope     if norm_scope      is not None else config.get("norm_scope", "volume")
 
     pad_left, pad_right, pad_anterior, pad_posterior, pad_superior, pad_inferior = _resolve_padding(
         pad_si=pad_si, pad_superior=pad_superior, pad_inferior=pad_inferior,
