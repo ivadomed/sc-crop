@@ -137,8 +137,8 @@ examples:
     parser.add_argument("--device", default=None,
                         help="Inference device: 'cpu', 'cuda', 'cuda:0', … (default: auto)")
     parser.add_argument("--norm-scope", dest="norm_scope", default="volume",
-                        choices=["volume", "slice"],
-                        help="Intensity normalisation scope: per volume (default) or per slice")
+                        choices=["volume", "slice_all", "slice"],
+                        help="Intensity normalisation scope: volume (default), slice_all (all voxels per slice), or slice (foreground only per slice)")
     parser.add_argument("--debug", action="store_true",
                         help="Save debug panel image alongside the output")
     parser.add_argument("--time",  action="store_true",

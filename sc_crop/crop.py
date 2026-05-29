@@ -25,10 +25,12 @@ Regularization (--regularization):
   none:                no regularization, raw detection output.
 
 Normalisation (--norm-scope):
-  volume (default): percentiles 0.5/99.5 computed once on all non-zero voxels of the
-                    resampled volume, then applied to every slice. Preserves relative
-                    intensity across slices — matches the training pipeline default.
-  slice:            percentiles computed independently per slice (legacy behaviour).
+  volume (default): mean±3σ on non-zero voxels of the resampled volume, applied to
+                    every slice in a single vectorized pass.
+  slice_all:        percentile 0.5/99.5 per slice on ALL voxels (background included).
+                    Matches preprocess.py norm_scope=slice_all — use when config.yaml
+                    reports norm_scope=slice_all.
+  slice:            percentile 0.5/99.5 per slice on foreground voxels only (legacy).
 
 Padding API (9 parameters, priority: individual > symmetric > default):
   Individual (per face):  pad_superior, pad_inferior, pad_left, pad_right, pad_anterior, pad_posterior
@@ -253,19 +255,17 @@ def normalize_to_uint8(arr: np.ndarray,
 
 
 def _volume_percentiles(data: np.ndarray) -> tuple[float, float]:
-    """Compute percentiles 0.5/99.5 on all non-background voxels of the volume.
+    """nnUNet ZScoreNormalization equivalent: mean/std on non-zero voxels, lo/hi = [mean-3σ, mean+3σ].
 
-    CT is auto-detected when data.min() < -100; threshold set to -200 HU to
-    exclude air while keeping fat, water, soft tissue and bone.
-    MRI uses threshold 0 (background = 0).
+    The mask (non-zero voxels) is derived from the image itself — no ground truth needed.
+    This matches nnUNet's use_mask_for_norm=True path where seg=-1 marks background (zero) voxels.
     """
-    flat = data.ravel()
-    threshold = -200 if float(flat.min()) < -100 else 0
-    nz = flat[flat > threshold]
-    if not len(nz):
-        return 0.0, 0.0
-    lo, hi = np.percentile(nz, [0.5, 99.5])
-    return float(lo), float(hi)
+    mask = data != 0
+    if not mask.any():
+        return 0.0, 1.0
+    mean = float(data[mask].mean())
+    std  = max(float(data[mask].std()), 1e-8)
+    return mean - 3 * std, mean + 3 * std
 
 
 def _get_slice(data: np.ndarray, las_idx: int, black: np.ndarray,
@@ -298,9 +298,12 @@ def build_slices(data: np.ndarray, channels: int,
                  norm_scope: str = "volume") -> tuple[list, list]:
     """Build all axial slices Superior→Inferior, matching preprocess.py convention.
 
-    norm_scope: "volume" (default) — percentiles computed once, volume normalized
-                in a single vectorized pass before slice extraction (~2× faster).
-                "slice"            — percentiles computed independently per slice.
+    norm_scope: "volume"    — percentiles computed once on non-zero voxels (mean±3σ),
+                              volume normalized in a single vectorized pass (~2× faster).
+                "slice_all" — percentile 0.5/99.5 per slice on ALL voxels (background
+                              included). Matches preprocess.py norm_scope=slice_all.
+                "slice"     — percentile 0.5/99.5 per slice on foreground voxels only
+                              (>0 for MRI, >-200 for CT).
     3ch: R=Superior neighbour (las_idx+1), G=current, B=Inferior neighbour (las_idx-1).
     Border channels are black (zeros).
 
@@ -317,9 +320,16 @@ def build_slices(data: np.ndarray, channels: int,
             if idx < 0 or idx >= Z:
                 return black
             return data_u8[:, :, idx].T[::-1, ::-1]
+    elif norm_scope == "slice_all":
+        def _get(idx):
+            if idx < 0 or idx >= Z:
+                return black
+            arr = data[:, :, idx].T[::-1, ::-1]
+            lo, hi = np.percentile(arr, [0.5, 99.5])
+            return normalize_to_uint8(arr, lo, hi)
     else:
         def _get(idx):
-            return _get_slice(data, idx, black)  # per-slice percentiles
+            return _get_slice(data, idx, black)  # per-slice percentiles, foreground only
 
     slices, las_idxs = [], []
     for las_idx in range(Z - 1, -1, -1):   # Superior → Inferior
@@ -615,7 +625,7 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
         device:         "cpu", "cuda", "mps" — only used when use_onnx=False.
         use_onnx:       True (default) — ONNX Runtime inference (CPU, no ultralytics).
                         False — PyTorch .pt inference (supports --device cuda/mps).
-        norm_scope:     "volume" (default) or "slice" — normalisation scope.
+        norm_scope:     "volume" (default), "slice_all", or "slice" — normalisation scope.
         debug:          Save debug panel PNG (requires ultralytics).
         time_steps:     Print elapsed time for each pipeline step.
 
