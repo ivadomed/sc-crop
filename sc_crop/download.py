@@ -20,17 +20,17 @@ import hashlib
 import urllib.request
 from pathlib import Path
 
-_MODEL_TAG = "v0.0.7"
+_MODEL_TAG = "v0.0.8"
 _BASE_URL = f"https://github.com/ivadomed/sc-crop/releases/download/{_MODEL_TAG}"
 
 _ASSETS = {
     "model.onnx": {
         "url": f"{_BASE_URL}/model.onnx",
-        "sha256": "96d761eb5f047d5f31c281a8a73b2b4b7dc7f84f065406b9514f1acad9fdaf3f",
+        "sha256": "eea9668030103063a6e94ebe759a49fec47af171ca450c0c5b5395cbc602e780",
     },
     "cls_model.onnx": {
         "url": f"{_BASE_URL}/cls_model.onnx",
-        "sha256": "af77f37973fa4304dbdf409c94a41605ae111bffd5242c14f03af552ca2879fc",
+        "sha256": "ac73adb2b6624df94f59e3a1f2e85deb9fd4f94f4a4fd87f04a2dfe42e6078ea",
     },
     "model.pt": {
         "url": f"{_BASE_URL}/model.pt",
