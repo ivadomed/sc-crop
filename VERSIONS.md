@@ -6,6 +6,7 @@ Ce fichier documente le lien entre la version du **package sc-crop**, la version
 
 | Package | Modèle  | Run d'entraînement                                   | Commit training repo                     |
 |---------|---------|------------------------------------------------------|------------------------------------------|
+| v0.1.9 | v0.0.9 | det=20260528_192341  cls=20260529_090157 | `57a25ca33cc5` |
 | v0.1.8 | v0.0.8 | det=20260528_192341  cls=20260529_090157 | `57a25ca33cc5` |
 | v0.1.7 | v0.0.7 | det=20260528_192341  cls=20260529_090157 | `57a25ca33cc5` |
 | v0.1.6 | v0.0.6 | *(même modèle que v0.1.5 — refactor package uniquement)* | — |

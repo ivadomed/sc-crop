@@ -20,7 +20,7 @@ import hashlib
 import urllib.request
 from pathlib import Path
 
-_MODEL_TAG = "v0.0.8"
+_MODEL_TAG = "v0.0.9"
 _BASE_URL = f"https://github.com/ivadomed/sc-crop/releases/download/{_MODEL_TAG}"
 
 _ASSETS = {
