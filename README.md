@@ -217,36 +217,38 @@ nnUNetv2_train 001 3d_fullres 0
 
 **Step 3 — Inference on a new image**
 
-In practice, inference is a single Python script: sc_crop crops the image, `nnUNetPredictor` runs on the crop, then `uncrop` restores the segmentation to the original space.
+The simplest approach uses the built-in `segment_onnx` / `segment_pt` functions (or their CLI equivalents) which handle detect → crop → infer → uncrop in one call. Install [nnunet-onnx](https://github.com/quentinRevillon/nnunet-onnx) for the inference backend:
 
+```bash
+pip install "nnunet-onnx @ git+https://github.com/quentinRevillon/nnunet-onnx.git" torch nnunetv2 onnxscript onnx
+```
+
+**Via CLI:**
+```bash
+# PyTorch checkpoint
+sc-segment-pt -i new_subject.nii.gz -o seg.nii.gz \
+    --checkpoint /path/to/fold_0/checkpoint_best.pth
+
+# ONNX model (no nnunetv2 needed at runtime)
+sc-segment-onnx -i new_subject.nii.gz -o seg.nii.gz \
+    --model /path/to/model.onnx
+```
+
+**Via Python API:**
 ```python
-from sc_crop import detect, crop, uncrop
-from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
+from sc_crop import segment_pt, segment_onnx
 import nibabel as nib
-import torch, tempfile, os
 
-PAD = dict(pad_left=10, pad_right=10, pad_anterior=15, pad_posterior=15,
-           pad_superior=40, pad_inferior=60)  # same as training
+seg = segment_pt("new_subject.nii.gz", "/path/to/fold_0/checkpoint_best.pth")
+seg = segment_onnx("new_subject.nii.gz", "/path/to/model.onnx")
+nib.save(seg, "seg.nii.gz")
+```
 
-# Detect and crop
-bbox     = detect("new_subject.nii.gz", **PAD)
-crop_img = crop(nib.load("new_subject.nii.gz"), bbox)
-
-with tempfile.TemporaryDirectory() as tmpdir:
-    fname_crop = os.path.join(tmpdir, "new_subject_0000.nii.gz")
-    fname_pred = os.path.join(tmpdir, "pred")
-    os.makedirs(fname_pred)
-    nib.save(crop_img, fname_crop)
-
-    # nnUNet inference on the cropped volume
-    predictor = nnUNetPredictor(device=torch.device("cpu"))
-    predictor.initialize_from_trained_model_folder("/path/to/model", use_folds=(0,))
-    predictor.predict_from_files([[fname_crop]], fname_pred)
-
-    # Restore segmentation to original space
-    seg_full = uncrop(nib.load(os.path.join(fname_pred, "new_subject.nii.gz")), bbox)
-
-nib.save(seg_full, "new_subject_seg.nii.gz")
+To convert a checkpoint to ONNX (plans are embedded in the file — no external json needed):
+```bash
+python -m nnunet_onnx.export \
+    --checkpoint /path/to/fold_0/checkpoint_best.pth \
+    --output model.onnx
 ```
 
 ---
