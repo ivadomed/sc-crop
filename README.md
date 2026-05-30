@@ -98,15 +98,23 @@ Three functions cover all use cases:
 | `uncrop(seg, bbox)` | Restores a segmentation from the cropped space back to the original full image space |
 
 ```python
+from sc_crop import detect, crop, uncrop
+import nibabel as nib
+
 img  = nib.load("t2.nii.gz")
 bbox = detect(img)                              # detect the spinal cord, return bounding box
 ```
 
 ```python
+from sc_crop import crop
+import nibabel as nib
+
 crop_img = crop(nib.load("t2.nii.gz"), bbox)   # also works on t2_seg.nii.gz
 ```
 
 ```python
+from sc_crop import uncrop
+
 full_img = uncrop(crop_img, bbox)               # restore to the original space
 ```
 
