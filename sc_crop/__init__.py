@@ -1,5 +1,5 @@
 """
-sc-crop — Spinal cord detection and cropping.
+sc-crop — Spinal cord detection, cropping, and segmentation.
 
 Public API:
     detect(img_path, ...)                  → bbox              — detect SC bbox, return context
@@ -7,6 +7,8 @@ Public API:
     uncrop(img, bbox)          → full-space NIfTI — restore any cropped volume to original space
     detect_and_crop(img_path, ...)         → (crop_nii, bbox)  — convenience: detect + crop image
     crop_nifti(img, bbox)                   → cropped NIfTI    — alias for crop() (backward compat)
+    segment_onnx(img, model_path, ...)     → binary NIfTI     — detect + ONNX inference + restore
+    segment_pt(img, checkpoint, ...)       → binary NIfTI     — detect + PyTorch inference + restore
     download()                             → pre-download ONNX models (auto on first use)
     download_pt()                          → pre-download PyTorch models (GPU batch)
     ensure_model()                         → path to model.onnx
@@ -29,6 +31,7 @@ from .download import (
     ensure_pt_model,
     _MODEL_TAG,
 )
+from .segment import segment_onnx, segment_pt
 
 __version__       = "0.1.9"
 __model_version__ = _MODEL_TAG

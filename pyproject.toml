@@ -17,10 +17,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-yolo = ["ultralytics>=8.0.0"]
+yolo    = ["ultralytics>=8.0.0"]
+segment = ["nnunet-onnx"]
 
 [project.scripts]
-sc_crop = "sc_crop.cli:main"
+sc_crop         = "sc_crop.cli:main"
+sc-segment-onnx = "sc_crop.segment:_cli_segment_onnx"
+sc-segment-pt   = "sc_crop.segment:_cli_segment_pt"
 
 [tool.setuptools.packages.find]
 where = ["."]
