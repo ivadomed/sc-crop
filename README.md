@@ -39,7 +39,7 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.1.7"
 
 ---
 
-## CLI
+## Command-line interface: detect and crop spinal cord volumes
 
 > The environment where sc-crop was installed must be active for the `sc_crop` command to be available.
 
