@@ -42,12 +42,34 @@ def check_label_crop(label: nib.Nifti1Image, bbox: dict) -> dict:
             print(f"Bad crop: lost {qc['voxels_before'] - qc['voxels_after']} voxels")
         crop_label = crop(nib.load("t2_seg.nii.gz"), bbox)
     """
-    voxels_before = int(np.count_nonzero(np.asarray(label.dataobj)))
+    data  = np.asarray(label.dataobj)
+    zooms = label.header.get_zooms()[:3]
+
+    voxels_before = int(np.count_nonzero(data))
     voxels_after  = int(np.count_nonzero(np.asarray(crop(label, bbox).dataobj)))
+
+    # Extra padding needed per face (mm) so the crop would contain all GT voxels
+    nz = np.argwhere(data > 0)
+    if len(nz):
+        gt_min = nz.min(axis=0)
+        gt_max = nz.max(axis=0)
+        bmin = np.array([bbox["xmin"], bbox["ymin"], bbox["zmin"]])
+        bmax = np.array([bbox["xmax"], bbox["ymax"], bbox["zmax"]])
+        extra_min = np.maximum(0, bmin - gt_min) * zooms  # label outside on min face
+        extra_max = np.maximum(0, gt_max - bmax) * zooms  # label outside on max face
+    else:
+        extra_min = extra_max = np.zeros(3)
+
     return {
-        "voxels_before": voxels_before,
-        "voxels_after":  voxels_after,
-        "ok":            voxels_after == voxels_before,
+        "voxels_before":    voxels_before,
+        "voxels_after":     voxels_after,
+        "ok":               voxels_after == voxels_before,
+        "extra_pad_xmin_mm": round(float(extra_min[0]), 2),
+        "extra_pad_xmax_mm": round(float(extra_max[0]), 2),
+        "extra_pad_ymin_mm": round(float(extra_min[1]), 2),
+        "extra_pad_ymax_mm": round(float(extra_max[1]), 2),
+        "extra_pad_zmin_mm": round(float(extra_min[2]), 2),
+        "extra_pad_zmax_mm": round(float(extra_max[2]), 2),
     }
 
 
@@ -85,8 +107,12 @@ class CropReport:
         """Write all accumulated results to a CSV file."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        fieldnames = ["label", "voxels_before", "voxels_after", "ok",
+                      "extra_pad_xmin_mm", "extra_pad_xmax_mm",
+                      "extra_pad_ymin_mm", "extra_pad_ymax_mm",
+                      "extra_pad_zmin_mm", "extra_pad_zmax_mm"]
         with open(path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["label", "voxels_before", "voxels_after", "ok"])
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(self._entries)
 
@@ -99,7 +125,11 @@ class CropReport:
             "ok":     len(self) - len(failed),
             "failed": len(failed),
             "failed_labels": [
-                {"label": e["label"], "voxels_before": e["voxels_before"], "voxels_after": e["voxels_after"]}
+                {k: e[k] for k in ["label", "voxels_before", "voxels_after",
+                                    "extra_pad_xmin_mm", "extra_pad_xmax_mm",
+                                    "extra_pad_ymin_mm", "extra_pad_ymax_mm",
+                                    "extra_pad_zmin_mm", "extra_pad_zmax_mm"]
+                 if k in e}
                 for e in failed
             ],
         }
