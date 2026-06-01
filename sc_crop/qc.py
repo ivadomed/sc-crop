@@ -51,7 +51,6 @@ def check_label_crop(label: nib.Nifti1Image, bbox: dict) -> dict:
     # Extra padding needed per anatomical face (mm) — maps directly to detect() parameters
     # axcodes[i] = positive direction of axis i (e.g. 'R', 'A', 'S')
     axcodes = bbox["original_axcodes"]
-    _opposite = {"R": "L", "L": "R", "A": "P", "P": "A", "S": "I", "I": "S"}
     _face = {
         "R": ("pad_left",       "pad_right"),      # xmin=left, xmax=right
         "L": ("pad_right",      "pad_left"),
