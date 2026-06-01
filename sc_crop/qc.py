@@ -48,28 +48,38 @@ def check_label_crop(label: nib.Nifti1Image, bbox: dict) -> dict:
     voxels_before = int(np.count_nonzero(data))
     voxels_after  = int(np.count_nonzero(np.asarray(crop(label, bbox).dataobj)))
 
-    # Extra padding needed per face (mm) so the crop would contain all GT voxels
+    # Extra padding needed per anatomical face (mm) — maps directly to detect() parameters
+    # axcodes[i] = positive direction of axis i (e.g. 'R', 'A', 'S')
+    axcodes = bbox["original_axcodes"]
+    _opposite = {"R": "L", "L": "R", "A": "P", "P": "A", "S": "I", "I": "S"}
+    _face = {
+        "R": ("pad_left",       "pad_right"),      # xmin=left, xmax=right
+        "L": ("pad_right",      "pad_left"),
+        "A": ("pad_posterior",  "pad_anterior"),
+        "P": ("pad_anterior",   "pad_posterior"),
+        "S": ("pad_inferior",   "pad_superior"),
+        "I": ("pad_superior",   "pad_inferior"),
+    }
+
     nz = np.argwhere(data > 0)
+    extra = {"pad_superior": 0.0, "pad_inferior": 0.0,
+             "pad_left": 0.0, "pad_right": 0.0,
+             "pad_anterior": 0.0, "pad_posterior": 0.0}
     if len(nz):
         gt_min = nz.min(axis=0)
         gt_max = nz.max(axis=0)
-        bmin = np.array([bbox["xmin"], bbox["ymin"], bbox["zmin"]])
-        bmax = np.array([bbox["xmax"], bbox["ymax"], bbox["zmax"]])
-        extra_min = np.maximum(0, bmin - gt_min) * zooms  # label outside on min face
-        extra_max = np.maximum(0, gt_max - bmax) * zooms  # label outside on max face
-    else:
-        extra_min = extra_max = np.zeros(3)
+        bmin = [bbox["xmin"], bbox["ymin"], bbox["zmin"]]
+        bmax = [bbox["xmax"], bbox["ymax"], bbox["zmax"]]
+        for i, ax in enumerate(axcodes):
+            face_min, face_max = _face[ax]
+            extra[face_min] = round(max(0.0, (bmin[i] - gt_min[i]) * zooms[i]), 2)
+            extra[face_max] = round(max(0.0, (gt_max[i] - bmax[i]) * zooms[i]), 2)
 
     return {
-        "voxels_before":    voxels_before,
-        "voxels_after":     voxels_after,
-        "ok":               voxels_after == voxels_before,
-        "extra_pad_xmin_mm": round(float(extra_min[0]), 2),
-        "extra_pad_xmax_mm": round(float(extra_max[0]), 2),
-        "extra_pad_ymin_mm": round(float(extra_min[1]), 2),
-        "extra_pad_ymax_mm": round(float(extra_max[1]), 2),
-        "extra_pad_zmin_mm": round(float(extra_min[2]), 2),
-        "extra_pad_zmax_mm": round(float(extra_max[2]), 2),
+        "voxels_before": voxels_before,
+        "voxels_after":  voxels_after,
+        "ok":            voxels_after == voxels_before,
+        **{f"extra_{k}_mm": v for k, v in extra.items()},
     }
 
 
@@ -108,9 +118,9 @@ class CropReport:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         fieldnames = ["label", "voxels_before", "voxels_after", "ok",
-                      "extra_pad_xmin_mm", "extra_pad_xmax_mm",
-                      "extra_pad_ymin_mm", "extra_pad_ymax_mm",
-                      "extra_pad_zmin_mm", "extra_pad_zmax_mm"]
+                      "extra_pad_superior_mm", "extra_pad_inferior_mm",
+                      "extra_pad_left_mm", "extra_pad_right_mm",
+                      "extra_pad_anterior_mm", "extra_pad_posterior_mm"]
         with open(path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
@@ -126,9 +136,9 @@ class CropReport:
             "failed": len(failed),
             "failed_labels": [
                 {k: e[k] for k in ["label", "voxels_before", "voxels_after",
-                                    "extra_pad_xmin_mm", "extra_pad_xmax_mm",
-                                    "extra_pad_ymin_mm", "extra_pad_ymax_mm",
-                                    "extra_pad_zmin_mm", "extra_pad_zmax_mm"]
+                                    "extra_pad_superior_mm", "extra_pad_inferior_mm",
+                                    "extra_pad_left_mm", "extra_pad_right_mm",
+                                    "extra_pad_anterior_mm", "extra_pad_posterior_mm"]
                  if k in e}
                 for e in failed
             ],
