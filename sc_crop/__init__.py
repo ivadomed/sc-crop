@@ -16,6 +16,10 @@ Public API:
     ensure_pt_model()                      → path to model.pt
     load_config()                          → loaded config dict
 
+Quality control:
+    check_label_crop(label, bbox)          → dict              — check no SC voxels lost after crop
+    CropReport                                                  — accumulate and save per-volume QC
+
 Version constants:
     __version__       → sc-crop package version  (e.g. "0.0.5")
     __model_version__ → detection model version   (e.g. "v0.0.3")
@@ -23,6 +27,7 @@ Version constants:
 """
 
 from .crop import crop, crop_nifti, detect, detect_and_crop, load_config, uncrop
+from .qc import check_label_crop, CropReport
 from .download import (
     download,
     download_pt,
