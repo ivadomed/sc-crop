@@ -130,10 +130,17 @@ class CropReport:
         """Write a JSON summary: total/ok/failed counts and list of failed labels."""
         import json
         failed = [e for e in self._entries if not e["ok"]]
+        pad_keys = ["extra_pad_superior_mm", "extra_pad_inferior_mm",
+                    "extra_pad_left_mm", "extra_pad_right_mm",
+                    "extra_pad_anterior_mm", "extra_pad_posterior_mm"]
+        max_padding = {k: round(max((e.get(k, 0.0) for e in failed), default=0.0), 2)
+                       for k in pad_keys} if failed else {k: 0.0 for k in pad_keys}
+
         summary = {
-            "total":  len(self),
-            "ok":     len(self) - len(failed),
-            "failed": len(failed),
+            "total":       len(self),
+            "ok":          len(self) - len(failed),
+            "failed":      len(failed),
+            "max_extra_padding_mm": max_padding,
             "failed_labels": [
                 {k: e[k] for k in ["label", "voxels_before", "voxels_after",
                                     "extra_pad_superior_mm", "extra_pad_inferior_mm",
