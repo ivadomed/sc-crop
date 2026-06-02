@@ -20,17 +20,20 @@ import hashlib
 import urllib.request
 from pathlib import Path
 
-_MODEL_TAG = "v0.0.9"
+_MODEL_TAG = "v0.0.10"
 _BASE_URL = f"https://github.com/ivadomed/sc-crop/releases/download/{_MODEL_TAG}"
 
+# v0.0.10: same trained weights as v0.0.9, but the detector is exported with
+# dynamic axes (rectangular letterbox 320×W) so sc_crop's ONNX preprocessing
+# matches YOLO's predict() bit-exactly. The classifier stays fixed 320×320.
 _ASSETS = {
     "model.onnx": {
         "url": f"{_BASE_URL}/model.onnx",
-        "sha256": "eea9668030103063a6e94ebe759a49fec47af171ca450c0c5b5395cbc602e780",
+        "sha256": "fb19dc819806b9ba3e0ce248d743397bf7a57914eb67057aa2cb38eff371ad7a",
     },
     "cls_model.onnx": {
         "url": f"{_BASE_URL}/cls_model.onnx",
-        "sha256": "ac73adb2b6624df94f59e3a1f2e85deb9fd4f94f4a4fd87f04a2dfe42e6078ea",
+        "sha256": "7562251b3d1ee7b6088e7549bca4e901ca52018723b732a96f9cead127559fd4",
     },
     "model.pt": {
         "url": f"{_BASE_URL}/model.pt",

@@ -128,18 +128,23 @@ class BBox3D:
         All six arguments are scalars in mm. Use _resolve_padding() to produce them
         from the public 9-parameter API.
 
-        LAS convention: rl1=Left, rl2=Right, ap1=Anterior, ap2=Posterior,
-                        z1=Superior, z2=Inferior.
+        LAS index convention (nibabel axcodes "LAS" — each axis index increases
+        toward L / A / S, so index 0 is the opposite face):
+            rl1 = Right side,    rl2 = Left side
+            ap1 = Posterior side, ap2 = Anterior side
+            z1  = Inferior side,  z2  = Superior side
+        Each low-index face is padded by its own anatomical margin, and each
+        high-index face by the complementary one.
         """
         rl_mm, ap_mm, si_mm = zooms
         RL, AP, Z = shape
         return BBox3D(
-            rl1=max(0,  self.rl1 - int(np.ceil(left     / rl_mm))),
-            rl2=min(RL, self.rl2 + int(np.ceil(right    / rl_mm))),
-            ap1=max(0,  self.ap1 - int(np.ceil(anterior / ap_mm))),
-            ap2=min(AP, self.ap2 + int(np.ceil(posterior/ ap_mm))),
-            z1=max(0,   self.z1  - int(np.ceil(superior / si_mm))),
-            z2=min(Z,   self.z2  + int(np.ceil(inferior / si_mm))),
+            rl1=max(0,  self.rl1 - int(np.ceil(right    / rl_mm))),
+            rl2=min(RL, self.rl2 + int(np.ceil(left     / rl_mm))),
+            ap1=max(0,  self.ap1 - int(np.ceil(posterior/ ap_mm))),
+            ap2=min(AP, self.ap2 + int(np.ceil(anterior / ap_mm))),
+            z1=max(0,   self.z1  - int(np.ceil(inferior / si_mm))),
+            z2=min(Z,   self.z2  + int(np.ceil(superior / si_mm))),
         )
 
     def to_mm(self, img: nib.Nifti1Image) -> tuple[np.ndarray, np.ndarray]:
