@@ -37,7 +37,7 @@ Padding API (9 parameters, priority: individual > symmetric > default):
   Symmetric: pad_si  (= superior + inferior),
                           pad_rl  (= left + right),
                           pad_ap  (= anterior + posterior)
-  Defaults: superior=40mm, inferior=60mm, left=right=10mm, anterior=posterior=15mm.
+  Defaults: superior=40mm, inferior=100mm, left=right=15mm, anterior=posterior=15mm.
 
 Usage:
     from sc_crop import detect, crop
@@ -80,8 +80,8 @@ def load_config() -> dict:
 # ─── BBox3D: single source of truth for voxel bboxes in LAS index space ──────
 
 _DEFAULT_PAD_SUPERIOR = 40.0
-_DEFAULT_PAD_INFERIOR = 60.0
-_DEFAULT_PAD_RL       = 10.0
+_DEFAULT_PAD_INFERIOR = 100.0   # cords extend far inferiorly (lumbar); covers anisotropic sagittal cases
+_DEFAULT_PAD_RL       = 15.0    # +5mm over the detected bbox to cover lateral GT overshoot (≤3.2mm observed)
 _DEFAULT_PAD_AP       = 15.0
 
 
@@ -616,9 +616,9 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
         config:         Config dict (loaded from config.yaml if None).
         model_path:     Path to model file (auto-downloaded if None).
         pad_superior:   Superior padding mm (default 40). Individual > symmetric > default.
-        pad_inferior:   Inferior padding mm (default 60).
-        pad_left:       Left padding mm (default 10).
-        pad_right:      Right padding mm (default 10).
+        pad_inferior:   Inferior padding mm (default 100).
+        pad_left:       Left padding mm (default 15).
+        pad_right:      Right padding mm (default 15).
         pad_anterior:   Anterior padding mm (default 15).
         pad_posterior:  Posterior padding mm (default 15).
         pad_si:         Symmetric SI — overridden by pad_superior/inferior.
