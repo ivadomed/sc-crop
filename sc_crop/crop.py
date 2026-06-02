@@ -37,7 +37,7 @@ Padding API (9 parameters, priority: individual > symmetric > default):
   Symmetric: pad_si  (= superior + inferior),
                           pad_rl  (= left + right),
                           pad_ap  (= anterior + posterior)
-  Defaults: superior=40mm, inferior=100mm, left=right=15mm, anterior=posterior=15mm.
+  Defaults: superior=40mm, inferior=100mm, left=right=15mm, anterior=15mm, posterior=22mm.
 
 Usage:
     from sc_crop import detect, crop
@@ -79,10 +79,11 @@ def load_config() -> dict:
 
 # ─── BBox3D: single source of truth for voxel bboxes in LAS index space ──────
 
-_DEFAULT_PAD_SUPERIOR = 40.0
-_DEFAULT_PAD_INFERIOR = 100.0   # cords extend far inferiorly (lumbar); covers anisotropic sagittal cases
-_DEFAULT_PAD_RL       = 15.0    # +5mm over the detected bbox to cover lateral GT overshoot (≤3.2mm observed)
-_DEFAULT_PAD_AP       = 15.0
+_DEFAULT_PAD_SUPERIOR  = 40.0
+_DEFAULT_PAD_INFERIOR  = 100.0   # cords extend far inferiorly (lumbar); covers anisotropic sagittal cases
+_DEFAULT_PAD_RL        = 15.0    # +5mm over the detected bbox to cover lateral GT overshoot (≤3.2mm observed)
+_DEFAULT_PAD_ANTERIOR  = 15.0
+_DEFAULT_PAD_POSTERIOR = 22.0    # cords (esp. PSIR) overshoot posteriorly; covers the ≤6.2mm observed
 
 
 def _resolve_padding(
@@ -99,8 +100,8 @@ def _resolve_padding(
     inf  = pad_inferior  if pad_inferior  is not None else (pad_si if pad_si is not None else _DEFAULT_PAD_INFERIOR)
     left = pad_left      if pad_left      is not None else (pad_rl if pad_rl is not None else _DEFAULT_PAD_RL)
     right= pad_right     if pad_right     is not None else (pad_rl if pad_rl is not None else _DEFAULT_PAD_RL)
-    ant  = pad_anterior  if pad_anterior  is not None else (pad_ap if pad_ap is not None else _DEFAULT_PAD_AP)
-    post = pad_posterior if pad_posterior is not None else (pad_ap if pad_ap is not None else _DEFAULT_PAD_AP)
+    ant  = pad_anterior  if pad_anterior  is not None else (pad_ap if pad_ap is not None else _DEFAULT_PAD_ANTERIOR)
+    post = pad_posterior if pad_posterior is not None else (pad_ap if pad_ap is not None else _DEFAULT_PAD_POSTERIOR)
     return left, right, ant, post, sup, inf
 
 
@@ -620,7 +621,7 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
         pad_left:       Left padding mm (default 15).
         pad_right:      Right padding mm (default 15).
         pad_anterior:   Anterior padding mm (default 15).
-        pad_posterior:  Posterior padding mm (default 15).
+        pad_posterior:  Posterior padding mm (default 22).
         pad_si:         Symmetric SI — overridden by pad_superior/inferior.
         pad_rl:         Symmetric RL — overridden by pad_left/right.
         pad_ap:         Symmetric AP — overridden by pad_anterior/posterior.
