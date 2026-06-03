@@ -96,6 +96,8 @@ Three functions cover all use cases:
 | `detect(img_path)` | Runs the SC detector and returns the bounding box coordinates |
 | `crop(img, bbox)` | Crops any NIfTI volume (image or label) to the bounding box |
 | `uncrop(seg, bbox)` | Restores a segmentation from the cropped space back to the original full image space |
+| `check_label_crop(label, bbox)` | Checks the crop preserves every label voxel; reports the extra padding (mm) needed per face if not |
+| `CropReport` | Accumulates per-volume `check_label_crop` results and writes a CSV report + JSON summary |
 
 ```python
 from sc_crop import detect, crop, uncrop
@@ -150,23 +152,42 @@ sc-crop must be applied with **identical padding around the detected spinal cord
 
 ### Step 1 — Preprocess training data
 
-Crop all images and their labels with the same padding:
+Crop all images and their labels with the same padding. Use `check_label_crop`
+and `CropReport` to verify no label voxel is cut by the crop — any loss means the
+detected box (plus padding) does not fully contain the cord, which would silently
+remove ground-truth voxels from training:
 
 ```python
-from sc_crop import detect, crop
+from sc_crop import detect, crop, check_label_crop, CropReport
 import nibabel as nib
 
 # Use the same padding for every subject
 PAD = dict(pad_superior=40, pad_inferior=100, pad_left=15, pad_right=15,
            pad_anterior=15, pad_posterior=22)
 
+report = CropReport()                       # accumulates per-volume QC
+
 for subject in subjects:
-    bbox        = detect(subject.image, **PAD)
+    bbox       = detect(subject.image, **PAD)
+    label_nii  = nib.load(subject.label)
+
+    qc = check_label_crop(label_nii, bbox)  # check BEFORE cropping
+    report.add(subject.label, qc)           # qc["ok"], voxels_before/after,
+                                            # extra_pad_<face>_mm if a face is short
+
     crop_img   = crop(nib.load(subject.image), bbox)
-    crop_label = crop(nib.load(subject.label), bbox)
+    crop_label = crop(label_nii, bbox)
     nib.save(crop_img,   subject.image_crop)
     nib.save(crop_label, subject.label_crop)
+
+report.save("crop_qc_report.csv")           # one row per volume
+report.save_summary("crop_qc_summary.json") # totals + max extra padding needed per face
+print(f"{report.n_failed()} / {len(report)} crops lost label voxels")
 ```
+
+If `report.n_failed() > 0`, inspect `crop_qc_summary.json`: its `max_extra_padding_mm`
+field tells you how many mm to add on each face (e.g. raise `pad_posterior`) so every
+cord is fully contained. The defaults above were tuned this way.
 
 ### Step 2 — Train your model on the cropped volumes
 
