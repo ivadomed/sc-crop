@@ -20,21 +20,21 @@ Fresh dedicated environment (for testing):
 
 ```bash
 conda create -n sc_crop python=3.13 && conda activate sc_crop
-pip install git+https://github.com/ivadomed/sc-crop.git@v0.1.7
+pip install git+https://github.com/ivadomed/sc-crop.git@v0.4.1
 ```
 
 Or into an existing environment:
 
 ```bash
-pip install git+https://github.com/ivadomed/sc-crop.git@v0.1.7
+pip install git+https://github.com/ivadomed/sc-crop.git@v0.4.1
 ```
 
-*To pin in a `requirements.txt`: add `sc-crop @ git+https://github.com/ivadomed/sc-crop.git@v0.1.7`*
+*To pin in a `requirements.txt`: add `sc-crop @ git+https://github.com/ivadomed/sc-crop.git@v0.4.1`*
 
 For GPU inference (adds `ultralytics`):
 
 ```bash
-pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.1.7"
+pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.4.1"
 ```
 
 ---
@@ -133,12 +133,12 @@ bbox = detect(img, pad_si=30, pad_rl=10, pad_ap=15)
 bbox = detect(img, pad_si=30, pad_inferior=60)
 
 # Full per-face control
-bbox = detect(img, pad_superior=40, pad_inferior=60,
-                   pad_left=10,     pad_right=10,
-                   pad_anterior=15, pad_posterior=15)
+bbox = detect(img, pad_superior=40, pad_inferior=100,
+                   pad_left=15,     pad_right=15,
+                   pad_anterior=15, pad_posterior=22)
 ```
 
-Padding is always clamped to the image boundaries. Priority per face: **individual > symmetric > default** (sup=40, inf=60, left=right=10, ant=post=15).
+Padding is always clamped to the image boundaries. Priority per face: **individual > symmetric > default** (sup=40, inf=100, left=right=15, ant=15, post=22).
 
 ---
 
@@ -157,8 +157,8 @@ from sc_crop import detect, crop
 import nibabel as nib
 
 # Use the same padding for every subject
-PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
-           pad_anterior=15, pad_posterior=15)
+PAD = dict(pad_superior=40, pad_inferior=100, pad_left=15, pad_right=15,
+           pad_anterior=15, pad_posterior=22)
 
 for subject in subjects:
     bbox        = detect(subject.image, **PAD)
@@ -180,8 +180,8 @@ Apply the **same padding**, run your model on the crop, then restore the segment
 from sc_crop import detect, crop, uncrop
 import nibabel as nib
 
-PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
-           pad_anterior=15, pad_posterior=15)  # identical to training
+PAD = dict(pad_superior=40, pad_inferior=100, pad_left=15, pad_right=15,
+           pad_anterior=15, pad_posterior=22)  # identical to training
 
 bbox      = detect("new_subject.nii.gz", **PAD)
 crop_img = crop(nib.load("new_subject.nii.gz"), bbox)
@@ -205,8 +205,8 @@ import nibabel as nib
 from pathlib import Path
 
 RAW = Path("nnUNet_raw/Dataset001_MyTask")
-PAD = dict(pad_superior=40, pad_inferior=60, pad_left=10, pad_right=10,
-           pad_anterior=15, pad_posterior=15)
+PAD = dict(pad_superior=40, pad_inferior=100, pad_left=15, pad_right=15,
+           pad_anterior=15, pad_posterior=22)
 
 for case_id, img_path, lbl_path in subjects:
     bbox = detect(img_path, **PAD)                                          # detect once
@@ -300,7 +300,7 @@ Replace `fake_sc_segmentation()` with your own model to use in production.
 
 ## Requirements
 
-Python ≥ 3.8. Core dependencies installed automatically: `nibabel`, `numpy`, `pillow`, `pyyaml`, `onnxruntime`.
+Python ≥ 3.8. Core dependencies installed automatically: `nibabel`, `numpy`, `pillow`, `pyyaml`, `onnxruntime`, `opencv-python-headless`, `scipy`.
 
 `ultralytics` is optional — required only for GPU/PyTorch inference (`use_onnx=False`) and the debug panel (`debug=True`). Install with the `[yolo]` extra above.
 

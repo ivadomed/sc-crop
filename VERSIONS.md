@@ -6,6 +6,10 @@ Ce fichier documente le lien entre la version du **package sc-crop**, la version
 
 | Package | Modèle  | Run d'entraînement                                   | Commit training repo                     |
 |---------|---------|------------------------------------------------------|------------------------------------------|
+| v0.4.1 | v0.0.10 | det=20260528_192341  cls=20260529_090157 | `57a25ca33cc5` |
+| v0.4.0 | v0.0.10 | det=20260528_192341  cls=20260529_090157 | `57a25ca33cc5` |
+| v0.3.0 | v0.0.10 | det=20260528_192341  cls=20260529_090157 | `57a25ca33cc5` |
+| v0.2.x | v0.0.9 | det=20260528_192341  cls=20260529_090157 | `57a25ca33cc5` |
 | v0.1.9 | v0.0.9 | det=20260528_192341  cls=20260529_090157 | `57a25ca33cc5` |
 | v0.1.8 | v0.0.8 | det=20260528_192341  cls=20260529_090157 | `57a25ca33cc5` |
 | v0.1.7 | v0.0.7 | det=20260528_192341  cls=20260529_090157 | `57a25ca33cc5` |
@@ -22,7 +26,27 @@ Ce fichier documente le lien entre la version du **package sc-crop**, la version
 | **Package** | Tag GitHub sur `ivadomed/sc-crop` — version installée via `pip install git+…@vX.Y.Z` |
 | **Modèle** | Tag du release hébergeant `model.onnx`, `model.pt`, `cls_model.onnx`, `cls_model.pt` sur `ivadomed/sc-crop`. Correspond à `_MODEL_TAG` dans `sc_crop/download.py`. |
 | **Run** | Dossier `checkpoints/<run_id>/weights/best.pt` dans [model_cropping_sc_contrast-agnostic_yolo](https://github.com/ivadomed/model_cropping_sc_contrast-agnostic_yolo) |
-| **Commit** | SHA du commit de `model_cropping_sc_contrast-agnostic_yolo` au moment de l'export |
+| **Commit** | SHA du commit du repo **d'entraînement** (`model_cropping_sc_contrast-agnostic_yolo`) au moment de l'export du modèle |
+
+## Deux commits différents — ne pas confondre
+
+Chaque ligne fait intervenir **deux** dépôts, donc **deux** commits :
+
+1. **Commit du package sc-crop** — le tag `vX.Y.Z` (colonne *Package*) **est** un commit sur `ivadomed/sc-crop`. Installer `@v0.4.1` installe exactement ce commit du code. Ce commit **n'apparaît pas** dans le tableau (c'est le tag lui-même).
+2. **Commit du repo d'entraînement** (colonne *Commit*) — un commit sur l'**autre** dépôt, `model_cropping_…`, qui dit avec quel état du code d'entraînement le modèle `.onnx`/`.pt` a été exporté.
+
+Autrement dit :
+
+- **Oui, chaque version de package est associée à un commit** : c'est son propre tag git sur `ivadomed/sc-crop`.
+- La colonne *Commit* du tableau est un commit **différent** (celui du repo d'entraînement), qui sert à reproduire le **modèle**, pas le code du package.
+
+| Ce que tu veux retrouver | Où regarder |
+|---|---|
+| Le code exact d'une version de package | `git checkout vX.Y.Z` sur `ivadomed/sc-crop` |
+| Le modèle (poids) d'une version | release *Modèle* (`_MODEL_TAG`) sur `ivadomed/sc-crop/releases` |
+| Comment ce modèle a été entraîné/exporté | colonne *Run* + *Commit* sur `model_cropping_…` |
+
+Note : plusieurs versions de package peuvent pointer vers le **même** modèle (ex. v0.3.0→v0.4.1 partagent le modèle v0.0.10) — seul le code du package change (preprocessing, padding par défaut), pas les poids.
 
 ## Interroger la version depuis Python
 
