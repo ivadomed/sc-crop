@@ -2,8 +2,10 @@
 Quality-control helpers for sc_crop detection-based cropping.
 
 Public API:
-    check_label_crop(label, bbox)  → dict  — check that no SC voxels are lost after crop
-    CropReport                             — accumulate and save per-volume QC results
+    check_label_crop(label, bbox)         → dict       — check that no SC voxels are lost after crop
+    save_bbox_nifti(bbox, ref_nii, path)  → None       — save the crop box as a binary NIfTI mask
+    check_seg_truncation(seg_nii, bbox)   → list[str]  — pad_* face names where seg touches crop boundary
+    CropReport                                          — accumulate and save per-volume QC results
 """
 
 import csv
@@ -13,6 +15,85 @@ import nibabel as nib
 import numpy as np
 
 from .crop import crop
+
+# Maps the positive-direction axcode of each image axis to the (lo_face, hi_face) pad_* names.
+# lo_face = name of the anatomical face at the low-index end; hi_face = high-index end.
+# Example: axcodes[0]="R" → axis 0 increases toward Right, so xmin=Left face, xmax=Right face.
+_FACE_MAP = {
+    "R": ("pad_left",      "pad_right"),
+    "L": ("pad_right",     "pad_left"),
+    "A": ("pad_posterior", "pad_anterior"),
+    "P": ("pad_anterior",  "pad_posterior"),
+    "S": ("pad_inferior",  "pad_superior"),
+    "I": ("pad_superior",  "pad_inferior"),
+}
+
+
+def save_bbox_nifti(bbox: dict, ref_nii: nib.Nifti1Image,
+                    out_path: "str | Path") -> None:
+    """Save the crop bounding box as a filled binary NIfTI mask.
+
+    The output is in the same grid as ref_nii, with 1s inside the box and 0s outside.
+    Suitable as a FSLeyes overlay: ``-ot mask -mc 1 0 0 --outline -w 3``.
+
+    Args:
+        bbox:     context dict returned by detect().
+        ref_nii:  reference NIfTI (defines grid, affine, header).
+        out_path: output file path (.nii or .nii.gz).
+    """
+    data = np.zeros(ref_nii.shape[:3], dtype=np.uint8)
+    data[bbox["xmin"]:bbox["xmax"]+1,
+         bbox["ymin"]:bbox["ymax"]+1,
+         bbox["zmin"]:bbox["zmax"]+1] = 1
+    nib.save(nib.Nifti1Image(data, ref_nii.affine, ref_nii.header), str(out_path))
+
+
+def check_seg_truncation(seg_nii: nib.Nifti1Image, bbox: dict) -> list:
+    """Check if a segmentation touches the crop box boundary (truncation detection).
+
+    A segmentation voxel on an interior crop face means the structure likely continues
+    beyond the box. Uses ``bbox["original_axcodes"]`` to map axes to anatomical faces —
+    no separate orientation parameter needed.
+
+    Args:
+        seg_nii: segmentation NIfTI in full original image space (after uncrop).
+        bbox:    context dict returned by detect().
+
+    Returns:
+        List of ``pad_*`` face name strings (e.g. ``["pad_superior", "pad_inferior"]``)
+        for each interior face where the segmentation touches the crop boundary.
+        Empty list means no truncation detected.
+
+    Example::
+
+        from sc_crop import detect, check_seg_truncation
+        import nibabel as nib
+
+        bbox     = detect("t2.nii.gz")
+        seg_nii  = nib.load("t2_seg.nii.gz")  # in full (uncropped) space
+        truncated = check_seg_truncation(seg_nii, bbox)
+        if truncated:
+            print("Truncated on:", truncated)
+    """
+    seg_data = np.asanyarray(seg_nii.dataobj)
+    shape = seg_data.shape
+    axcodes = bbox["original_axcodes"]
+    truncated = []
+    for ax, lo, hi in [(0, bbox["xmin"], bbox["xmax"]),
+                       (1, bbox["ymin"], bbox["ymax"]),
+                       (2, bbox["zmin"], bbox["zmax"])]:
+        face_lo, face_hi = _FACE_MAP[axcodes[ax]]
+        if hi < shape[ax] - 1:
+            sl = [slice(None)] * 3
+            sl[ax] = hi
+            if np.any(seg_data[tuple(sl)]):
+                truncated.append(face_hi)
+        if lo > 0:
+            sl = [slice(None)] * 3
+            sl[ax] = lo
+            if np.any(seg_data[tuple(sl)]):
+                truncated.append(face_lo)
+    return truncated
 
 
 def check_label_crop(label: nib.Nifti1Image, bbox: dict) -> dict:
@@ -51,14 +132,6 @@ def check_label_crop(label: nib.Nifti1Image, bbox: dict) -> dict:
     # Extra padding needed per anatomical face (mm) — maps directly to detect() parameters
     # axcodes[i] = positive direction of axis i (e.g. 'R', 'A', 'S')
     axcodes = bbox["original_axcodes"]
-    _face = {
-        "R": ("pad_left",       "pad_right"),      # xmin=left, xmax=right
-        "L": ("pad_right",      "pad_left"),
-        "A": ("pad_posterior",  "pad_anterior"),
-        "P": ("pad_anterior",   "pad_posterior"),
-        "S": ("pad_inferior",   "pad_superior"),
-        "I": ("pad_superior",   "pad_inferior"),
-    }
 
     nz = np.argwhere(data > 0)
     extra = {"pad_superior": 0.0, "pad_inferior": 0.0,
@@ -70,7 +143,7 @@ def check_label_crop(label: nib.Nifti1Image, bbox: dict) -> dict:
         bmin = [bbox["xmin"], bbox["ymin"], bbox["zmin"]]
         bmax = [bbox["xmax"], bbox["ymax"], bbox["zmax"]]
         for i, ax in enumerate(axcodes):
-            face_min, face_max = _face[ax]
+            face_min, face_max = _FACE_MAP[ax]
             extra[face_min] = round(max(0.0, (bmin[i] - gt_min[i]) * zooms[i]), 2)
             extra[face_max] = round(max(0.0, (gt_max[i] - bmax[i]) * zooms[i]), 2)
 

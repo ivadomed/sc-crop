@@ -4,8 +4,8 @@ Command-line interface for sc_crop.
 Three modes, selected automatically from the arguments:
 
   Detect (default — no coordinates):
-    sc_crop -i t2.nii.gz [-o bbox.txt]
-    sc_crop -i t2.nii.gz --detect [-o bbox.txt]
+    sc_crop -i t2.nii.gz [-o t2_cropbox.nii.gz]
+    sc_crop -i t2.nii.gz --detect [-o t2_cropbox.nii.gz]
 
   Crop (coordinates provided, or --crop flag):
     sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
@@ -23,9 +23,11 @@ import sys
 from pathlib import Path
 
 import nibabel as nib
+import numpy as np
 
-from .crop import detect, crop, _write_bbox_txt, _read_bbox_txt, _stem, _warn_overwrite
+from .crop import detect, crop, _read_bbox_txt, _stem, _warn_overwrite
 from .download import download
+from .qc import save_bbox_nifti
 
 GREEN, RESET = "\033[32m", "\033[0m"
 
@@ -63,15 +65,15 @@ def main():
         epilog="""
 modes:
   detect (default)     sc_crop -i t2.nii.gz
+  crop from bbox mask  sc_crop -i t2.nii.gz --bbox t2_cropbox.nii.gz
   crop from coords     sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
-  crop from bbox file  sc_crop -i t2.nii.gz --bbox t2_bbox.txt
   detect + crop        sc_crop -i t2.nii.gz --detect-crop
 
 examples:
-  sc_crop -i t2.nii.gz                                            # detect → bbox.txt
+  sc_crop -i t2.nii.gz                                            # detect → t2_cropbox.nii.gz
+  sc_crop -i t2.nii.gz --bbox t2_cropbox.nii.gz                  # crop from bbox NIfTI mask
+  sc_crop -i label.nii.gz --bbox t2_cropbox.nii.gz               # crop label with same bbox
   sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
-  sc_crop -i t2.nii.gz --bbox t2_bbox.txt                        # crop from bbox file
-  sc_crop -i label.nii.gz --bbox t2_bbox.txt                     # crop label with same bbox
   sc_crop -i t2.nii.gz --detect-crop                             # detect + crop in one step
   sc_crop -i t2.nii.gz --detect-crop --pad-sup 50 --pad-inf 80
 """,
@@ -83,12 +85,12 @@ examples:
     parser.add_argument("-i", dest="input_flag", default=None,
                         help="Input NIfTI volume — SCT-style alias for positional input")
     parser.add_argument("-o", "--output", default=None,
-                        help="Output path: bbox.txt (detect), cropped volume (crop/detect-crop)")
+                        help="Output path: cropbox NIfTI mask (detect), cropped volume (crop/detect-crop)")
 
     # ── Mode flags ────────────────────────────────────────────────────────────
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--detect",      action="store_true",
-                      help="Detect spinal cord and write bbox.txt (default mode)")
+                      help="Detect spinal cord and write cropbox NIfTI mask (default mode)")
     mode.add_argument("--crop",        action="store_true",
                       help="Crop using --bbox file or explicit -xmin/-xmax/… coordinates (no detection)")
     mode.add_argument("--detect-crop", dest="detect_crop", action="store_true",
@@ -97,7 +99,7 @@ examples:
     # ── Crop coordinates ──────────────────────────────────────────────────────
     coords = parser.add_argument_group("crop coordinates (voxel indices, inclusive)")
     coords.add_argument("--bbox", default=None, metavar="FILE",
-                        help="Bbox txt file from sc_crop detect — alternative to passing coordinates")
+                        help="Cropbox NIfTI mask (.nii/.nii.gz) or legacy bbox .txt file — alternative to passing coordinates")
     coords.add_argument("-xmin", type=int, default=None, metavar="N", help="x min (inclusive)")
     coords.add_argument("-xmax", type=int, default=None, metavar="N", help="x max (inclusive)")
     coords.add_argument("-ymin", type=int, default=None, metavar="N", help="y min (inclusive)")
@@ -152,9 +154,19 @@ examples:
     coords_provided = any(v is not None for v in
                           [args.xmin, args.xmax, args.ymin, args.ymax, args.zmin, args.zmax])
 
-    # ── Mode: crop from bbox file ─────────────────────────────────────────────
+    # ── Mode: crop from bbox file (NIfTI mask or legacy txt) ─────────────────
     if args.bbox:
-        xmin, xmax, ymin, ymax, zmin, zmax = _read_bbox_txt(args.bbox)
+        bbox_path = str(args.bbox)
+        if bbox_path.endswith(".nii") or bbox_path.endswith(".nii.gz"):
+            mask_nii = nib.load(bbox_path)
+            nz = np.nonzero(np.asanyarray(mask_nii.dataobj))
+            if nz[0].size == 0:
+                raise ValueError(f"--bbox: mask {bbox_path} is empty (no non-zero voxels).")
+            xmin, xmax = int(nz[0].min()), int(nz[0].max())
+            ymin, ymax = int(nz[1].min()), int(nz[1].max())
+            zmin, zmax = int(nz[2].min()), int(nz[2].max())
+        else:
+            xmin, xmax, ymin, ymax, zmin, zmax = _read_bbox_txt(args.bbox)
         _crop_from_coords(input_path, xmin, xmax, ymin, ymax, zmin, zmax,
                           args.output, args.translate)
         return
@@ -216,21 +228,16 @@ examples:
         return
 
     # ── Mode: detect only ─────────────────────────────────────────────────────
-    from .crop import BBox3D
-    bbox_orig = BBox3D(
-        bbox["xmin"], bbox["xmax"] + 1,
-        bbox["ymin"], bbox["ymax"] + 1,
-        bbox["zmin"], bbox["zmax"] + 1,
-    )
-    bbox_txt = Path(args.output) if args.output else parent / f"{stem}_bbox.txt"
-    _write_bbox_txt(bbox_txt, bbox_orig)
-    print(f"          → {bbox_txt}")
+    cropbox_path = Path(args.output) if args.output else parent / f"{stem}_cropbox.nii.gz"
+    _warn_overwrite(cropbox_path)
+    save_bbox_nifti(bbox, nib.load(input_path), cropbox_path)
+    print(f"Cropbox : {cropbox_path}")
 
-    print(f"\nTo crop with SCT (if installed):")
-    print(f"  {GREEN}sct_crop_image -i {input_path} -xmin {xmin} -xmax {xmax} -ymin {ymin} -ymax {ymax} -zmin {zmin} -zmax {zmax}{RESET}")
+    print(f"\nTo view in FSLeyes:")
+    print(f"  {GREEN}fsleyes {input_path} {cropbox_path} -ot mask -mc 1 0 0 --outline -w 3 &{RESET}")
     print(f"\nTo crop with sc_crop:")
+    print(f"  {GREEN}sc_crop -i {input_path} --bbox {cropbox_path}{RESET}")
     print(f"  {GREEN}sc_crop -i {input_path} --crop -xmin {xmin} -xmax {xmax} -ymin {ymin} -ymax {ymax} -zmin {zmin} -zmax {zmax}{RESET}")
-    print(f"  {GREEN}sc_crop -i {input_path} --bbox {bbox_txt}{RESET}")
 
 
 if __name__ == "__main__":
