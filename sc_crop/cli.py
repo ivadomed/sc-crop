@@ -25,7 +25,7 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-from .crop import detect, crop, _read_bbox_txt, _stem, _warn_overwrite
+from .crop import detect, crop, _read_bbox_txt, _write_bbox_txt, _stem, _warn_overwrite, BBox3D
 from .download import download
 from .qc import save_bbox_nifti
 
@@ -229,9 +229,12 @@ examples:
 
     # ── Mode: detect only ─────────────────────────────────────────────────────
     cropbox_path = Path(args.output) if args.output else parent / f"{stem}_cropbox.nii.gz"
+    bbox_txt_path = parent / f"{stem}_bbox.txt"
     _warn_overwrite(cropbox_path)
     save_bbox_nifti(bbox, nib.load(input_path), cropbox_path)
     print(f"Cropbox : {cropbox_path}")
+    _write_bbox_txt(bbox_txt_path, BBox3D(xmin, xmax + 1, ymin, ymax + 1, zmin, zmax + 1))
+    print(f"BBox    : {bbox_txt_path}")
 
     print(f"\nTo view in FSLeyes:")
     print(f"  {GREEN}fsleyes {input_path} {cropbox_path} -ot mask -mc 1 0 0 --outline -w 3 &{RESET}")
