@@ -73,8 +73,10 @@ The command also prints a ready-to-use FSLeyes command to visualise the crop and
 fsleyes t2.nii.gz t2_crop.nii.gz t2_cropbox.nii.gz -ot mask -mc 1 0 0 --outline -w 3 &
 ```
 
-<img width="1181" height="908" alt="image" src="https://github.com/user-attachments/assets/510fff6e-5436-47d1-89b3-ebe549e38449" />*
-<img width="251" height="775" alt="image" src="https://github.com/user-attachments/assets/4d83d93d-efc5-4695-97f3-0535aec30fce" />
+<table><tr>
+<td><img width="560" alt="FSLeyes bounding box overlay" src="https://github.com/user-attachments/assets/510fff6e-5436-47d1-89b3-ebe549e38449" /></td>
+<td><img width="200" alt="FSLeyes overlay panel" src="https://github.com/user-attachments/assets/4d83d93d-efc5-4695-97f3-0535aec30fce" /></td>
+</tr></table>
 
 
 
