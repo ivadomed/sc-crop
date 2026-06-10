@@ -69,9 +69,8 @@ Three files are written:
 
 The command also prints a ready-to-use FSLeyes command to visualise the crop and its bounding box:
 
-```
-To view in FSLeyes:
-  fsleyes t2.nii.gz t2_crop.nii.gz t2_cropbox.nii.gz -ot mask -mc 1 0 0 --outline -w 3 &
+```bash
+fsleyes t2.nii.gz t2_crop.nii.gz t2_cropbox.nii.gz -ot mask -mc 1 0 0 --outline -w 3 &
 ```
 
 ### Crop a label with the same bounding box
