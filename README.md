@@ -73,6 +73,9 @@ The command also prints a ready-to-use FSLeyes command to visualise the crop and
 fsleyes t2.nii.gz t2_crop.nii.gz t2_cropbox.nii.gz -ot mask -mc 1 0 0 --outline -w 3 &
 ```
 
+<img width="1181" height="908" alt="image" src="https://github.com/user-attachments/assets/510fff6e-5436-47d1-89b3-ebe549e38449" />
+
+
 ### Crop a label with the same bounding box
 
 Use the `t2_cropbox.nii.gz` (or `t2_bbox.txt`) produced above to crop any other volume — label, atlas, or additional contrast — with the exact same boundaries:
