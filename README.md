@@ -1,6 +1,7 @@
 # sc-crop — Spinal cord detection and cropping
 
-<img width="1553" height="852" alt="image" src="https://github.com/user-attachments/assets/53cc342b-3e60-4adc-ac33-75ef4ea7153e" />
+<img width="1638" height="983" alt="image" src="https://github.com/user-attachments/assets/8ac934fa-d696-45ef-ac0c-7120424cba58" />
+
 
 
 Segmentation models for spinal cord pathologies (tumors, lesions, SC itself) are typically trained and run on full volumes where the spinal cord occupies only a small fraction of the volume. **sc-crop** solves this by automatically detecting the spinal cord and cropping the volume tightly around it, so your segmentation model only ever sees the relevant region.
