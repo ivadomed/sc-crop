@@ -236,11 +236,10 @@ examples:
     _write_bbox_txt(bbox_txt_path, BBox3D(xmin, xmax + 1, ymin, ymax + 1, zmin, zmax + 1))
     print(f"BBox    : {bbox_txt_path}")
 
-    print(f"\nTo view in FSLeyes:")
-    print(f"  {GREEN}fsleyes {input_path} {cropbox_path} -ot mask -mc 1 0 0 --outline -w 3 &{RESET}")
-    print(f"\nTo crop with sc_crop:")
+    crop_path = parent / f"{stem}_crop.nii.gz"
+    print(f"\nTo crop and view in FSLeyes:")
     print(f"  {GREEN}sc_crop -i {input_path} --bbox {cropbox_path}{RESET}")
-    print(f"  {GREEN}sc_crop -i {input_path} --crop -xmin {xmin} -xmax {xmax} -ymin {ymin} -ymax {ymax} -zmin {zmin} -zmax {zmax}{RESET}")
+    print(f"  {GREEN}fsleyes {input_path} {crop_path} {cropbox_path} -ot mask -mc 1 0 0 --outline -w 3 &{RESET}")
 
 
 if __name__ == "__main__":
