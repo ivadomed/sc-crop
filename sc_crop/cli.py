@@ -64,18 +64,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 modes:
-  detect (default)     sc_crop -i t2.nii.gz
-  crop from bbox mask  sc_crop -i t2.nii.gz --bbox t2_cropbox.nii.gz
-  crop from coords     sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
-  detect + crop        sc_crop -i t2.nii.gz --detect-crop
+  detect + crop (default)  sc_crop -i t2.nii.gz
+  detect only              sc_crop -i t2.nii.gz --detect
+  crop from bbox mask      sc_crop -i t2.nii.gz --bbox t2_cropbox.nii.gz
+  crop from coords         sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
 
 examples:
-  sc_crop -i t2.nii.gz                                            # detect → t2_cropbox.nii.gz
+  sc_crop -i t2.nii.gz                                            # detect + crop → t2_crop.nii.gz + t2_cropbox.nii.gz
+  sc_crop -i t2.nii.gz --detect                                  # detect only → t2_cropbox.nii.gz + t2_bbox.txt
   sc_crop -i t2.nii.gz --bbox t2_cropbox.nii.gz                  # crop from bbox NIfTI mask
   sc_crop -i label.nii.gz --bbox t2_cropbox.nii.gz               # crop label with same bbox
   sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
-  sc_crop -i t2.nii.gz --detect-crop                             # detect + crop in one step
-  sc_crop -i t2.nii.gz --detect-crop --pad-sup 50 --pad-inf 80
+  sc_crop -i t2.nii.gz --pad-sup 50 --pad-inf 80
 """,
     )
 
@@ -85,16 +85,14 @@ examples:
     parser.add_argument("-i", dest="input_flag", default=None,
                         help="Input NIfTI volume — SCT-style alias for positional input")
     parser.add_argument("-o", "--output", default=None,
-                        help="Output path: cropbox NIfTI mask (detect), cropped volume (crop/detect-crop)")
+                        help="Output path for the cropped volume (default: input with '_crop' suffix)")
 
     # ── Mode flags ────────────────────────────────────────────────────────────
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--detect",      action="store_true",
-                      help="Detect spinal cord and write cropbox NIfTI mask (default mode)")
+                      help="Detect only — write cropbox NIfTI mask and bbox.txt, do not crop")
     mode.add_argument("--crop",        action="store_true",
                       help="Crop using --bbox file or explicit -xmin/-xmax/… coordinates (no detection)")
-    mode.add_argument("--detect-crop", dest="detect_crop", action="store_true",
-                      help="Detect spinal cord then crop in one step")
 
     # ── Crop coordinates ──────────────────────────────────────────────────────
     coords = parser.add_argument_group("crop coordinates (voxel indices, inclusive)")
@@ -213,32 +211,39 @@ examples:
     ymin, ymax = bbox["ymin"], bbox["ymax"]
     zmin, zmax = bbox["zmin"], bbox["zmax"]
 
-    # ── Mode: detect-crop ─────────────────────────────────────────────────────
-    if args.detect_crop:
-        if args.las:
-            cropped   = bbox["_bbox_pad_las"].crop(bbox["_img_las"], translate=args.translate)
-            crop_path = Path(args.output) if args.output else parent / f"{stem}_crop_las.nii.gz"
-        else:
-            cropped   = crop(nib.load(input_path), bbox, translate=args.translate)
-            crop_path = Path(args.output) if args.output else parent / f"{stem}_crop.nii.gz"
-        _warn_overwrite(crop_path)
-        nib.save(cropped, crop_path)
-        print(f"Crop    : {crop_path}  shape={cropped.shape}")
-        _print_fsleyes(input_path, crop_path)
+    # ── Mode: detect only ─────────────────────────────────────────────────────
+    if args.detect:
+        cropbox_path  = parent / f"{stem}_cropbox.nii.gz"
+        bbox_txt_path = parent / f"{stem}_bbox.txt"
+        _warn_overwrite(cropbox_path)
+        save_bbox_nifti(bbox, nib.load(input_path), cropbox_path)
+        print(f"Cropbox : {cropbox_path}")
+        _write_bbox_txt(bbox_txt_path, BBox3D(xmin, xmax + 1, ymin, ymax + 1, zmin, zmax + 1))
+        print(f"BBox    : {bbox_txt_path}")
+        crop_path = parent / f"{stem}_crop.nii.gz"
+        print(f"\nTo crop and view in FSLeyes:")
+        print(f"  {GREEN}sc_crop -i {input_path} --bbox {cropbox_path}{RESET}")
+        print(f"  {GREEN}fsleyes {input_path} {crop_path} {cropbox_path} -ot mask -mc 1 0 0 --outline -w 3 &{RESET}")
         return
 
-    # ── Mode: detect only ─────────────────────────────────────────────────────
-    cropbox_path = Path(args.output) if args.output else parent / f"{stem}_cropbox.nii.gz"
+    # ── Mode: detect + crop (default) ────────────────────────────────────────
+    if args.las:
+        cropped      = bbox["_bbox_pad_las"].crop(bbox["_img_las"], translate=args.translate)
+        crop_path    = Path(args.output) if args.output else parent / f"{stem}_crop_las.nii.gz"
+    else:
+        cropped      = crop(nib.load(input_path), bbox, translate=args.translate)
+        crop_path    = Path(args.output) if args.output else parent / f"{stem}_crop.nii.gz"
+    cropbox_path = parent / f"{stem}_cropbox.nii.gz"
     bbox_txt_path = parent / f"{stem}_bbox.txt"
+    _warn_overwrite(crop_path)
     _warn_overwrite(cropbox_path)
+    nib.save(cropped, crop_path)
     save_bbox_nifti(bbox, nib.load(input_path), cropbox_path)
-    print(f"Cropbox : {cropbox_path}")
     _write_bbox_txt(bbox_txt_path, BBox3D(xmin, xmax + 1, ymin, ymax + 1, zmin, zmax + 1))
+    print(f"Crop    : {crop_path}  shape={cropped.shape}")
+    print(f"Cropbox : {cropbox_path}")
     print(f"BBox    : {bbox_txt_path}")
-
-    crop_path = parent / f"{stem}_crop.nii.gz"
-    print(f"\nTo crop and view in FSLeyes:")
-    print(f"  {GREEN}sc_crop -i {input_path} --bbox {cropbox_path}{RESET}")
+    print(f"\nTo view in FSLeyes:")
     print(f"  {GREEN}fsleyes {input_path} {crop_path} {cropbox_path} -ot mask -mc 1 0 0 --outline -w 3 &{RESET}")
 
 
