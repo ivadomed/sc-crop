@@ -1,0 +1,11 @@
+# LaTeX build artifacts
+*.pdf
+*.log
+*.aux
+*.out
+*.synctex.gz
+*.toc
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
