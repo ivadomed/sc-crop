@@ -40,6 +40,6 @@ from .download import (
 )
 from .segment import segment_onnx, segment_pt
 
-__version__       = "0.4.1"
+__version__       = "0.5.0"
 __model_version__ = _MODEL_TAG
 MODEL_VERSION     = _MODEL_TAG
