@@ -18,6 +18,8 @@ Public API:
 
 Quality control:
     check_label_crop(label, bbox)          → dict              — check no SC voxels lost after crop
+    save_bbox_nifti(bbox, ref_nii, path)   → None              — save crop box as binary NIfTI mask
+    check_seg_truncation(seg_nii, bbox)    → list[str]         — pad_* faces where seg touches crop boundary
     CropReport                                                  — accumulate and save per-volume QC
 
 Version constants:
@@ -27,7 +29,7 @@ Version constants:
 """
 
 from .crop import crop, crop_nifti, detect, detect_and_crop, load_config, uncrop
-from .qc import check_label_crop, CropReport
+from .qc import check_label_crop, CropReport, save_bbox_nifti, check_seg_truncation
 from .download import (
     download,
     download_pt,

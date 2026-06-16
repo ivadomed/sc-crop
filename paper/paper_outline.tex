@@ -1,0 +1,883 @@
+% =====================================================================
+%  PAPER OUTLINE — sc-crop + contrast-agnostic v4
+%  Working title:
+%    "Detect-then-segment: a contrast-agnostic spinal cord cropping
+%     pipeline that improves segmentation accuracy and inference speed"
+%
+%  HOW TO USE THIS FILE
+%  --------------------
+%  This is a STRUCTURED SKELETON, not a finished paper. Every section is a
+%  bullet-point plan. Markers tell you exactly what to write/insert:
+%     [WRITE]        -> prose you still need to write
+%     [INSERT-RESULT]-> a number/figure/table that ALREADY EXISTS (source given)
+%     [FUTURE]       -> a placeholder reserved for upcoming models/experiments
+%     [DECISION]     -> an authoring choice to settle before submission
+%  It compiles as-is (pdflatex). Replace bullets with prose section by section.
+%
+%  TARGET VENUE [DECISION]: methods/tool paper. The lab publishes in
+%  Medical Image Analysis and Imaging Neuroscience -> assume that audience
+%  (medical imaging + neuro), single-column or journal template later.
+% =====================================================================
+
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue]{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+% --- authoring markers (render in color so they stand out in drafts) ---
+\newcommand{\WRITE}[1]{\textcolor{blue}{\textbf{[WRITE]} #1}}
+\newcommand{\RESULT}[1]{\textcolor{teal}{\textbf{[INSERT-RESULT]} #1}}
+\newcommand{\FUTURE}[1]{\textcolor{orange}{\textbf{[FUTURE]} #1}}
+\newcommand{\DECISION}[1]{\textcolor{red}{\textbf{[DECISION]} #1}}
+
+\title{Detect-then-segment: a contrast-agnostic spinal cord cropping
+pipeline that improves segmentation accuracy and inference speed
+\\ \large \DECISION{title is a placeholder — settle once results are final}}
+\author{Quentin Revillon \and \FUTURE{co-authors}}
+\date{Draft outline}
+
+\begin{document}
+\maketitle
+
+% =====================================================================
+\section*{Reviewer's map of contributions (delete before submission)}
+% =====================================================================
+% Keep this crystal clear in your head while writing — the paper has THREE
+% deliverables. Do not let them blur together:
+\begin{itemize}
+  \item \textbf{C1 — sc-crop}: a generic, contrast- and modality-agnostic
+        spinal-cord \emph{detection + cropping} tool (2D axial YOLO detector
+        + connected-component classifier regularization), released as a CLI
+        and a Python package, ONNX (CPU) and PyTorch (GPU) backends.
+        \emph{This is the methodological core.}
+  \item \textbf{C2 — crop ablation}: the same contrast-agnostic nnUNet trained
+        on cropped vs full volumes (identical data, labels, split), used to
+        \emph{quantify} the benefit of detect-then-segment (Dice + speed) with the
+        crop as the only difference.
+  \item \textbf{C3 — deployment + monitoring}: integration into Spinal Cord
+        Toolbox (\texttt{sct\_deepseg}) and an automated lifelong-learning
+        pipeline that tracks morphometric (CSA) drift across model releases.
+\end{itemize}
+\DECISION{Lead with C1 (the tool generalizes beyond this one model) and use
+C2 as the validation. Alternative framing — lead with C2 (a better SC model)
+— is weaker because the novelty is the pipeline, not the nnUNet retrain.}
+
+% =====================================================================
+\section*{Abstract}\label{sec:abstract}
+% =====================================================================
+% ~200--250 words. Prose draft below. Numbers in \WRITE{} are NOT yet measured
+% and each is gated on a specific experiment — see "EXPERIMENTS REQUIRED" block.
+%
+% FRAMING (do not drift): the argument is a clean chain --- (1) nnUNet is the
+% SOTA for SC segmentation but slow on CPU (clinical bottleneck); (2) two ways to
+% speed it up: change the architecture (accuracy cost) OR shrink the FOV by
+% cropping (architecture untouched -> accuracy kept); (3) we take route 2 and
+% build a fast, robust, REUSABLE, contrast-agnostic CPU crop. The contribution is
+% that reusable crop, validated by retraining nnUNet on crops. Accuracy is
+% reported as MAINTAINED / non-inferior; the small Dice gain is attributed to
+% cropping ONLY via the controlled no-crop ablation (Dataset7001) --- the
+% v3-vs-v4 number alone is a confounded deployment comparison.
+
+Spinal cord (SC) segmentation has reached high accuracy across contrasts and
+pathologies with the nnUNet-based contrast-agnostic model deployed in the Spinal
+Cord Toolbox (SCT). The remaining barrier to clinical adoption is speed. On CPU,
+whole-volume inference takes up to $\sim$2\,min \WRITE{[confirm, EXP-SPEED]}.
+nnUNet processes the entire volume, yet the cord occupies only a small fraction
+of it --- so cropping to a cord-centred region of interest would reduce inference
+cost by the same factor, with the architecture left untouched. No standalone,
+contrast-agnostic cropping tool exists: existing localisers are either absent
+from the pipeline \cite{bedard2025media} or tightly coupled to a specific
+segmentation model \cite{lemay2021tumor, gros2021tumor}.
+
+We present \textbf{sc-crop}, a fast, reusable, modality-agnostic detect-and-crop
+primitive for spinal cord imaging. A 2D axial YOLO detector runs per slice; a
+connected-component classifier removes superior false positives (brain stem, neck
+structures), yielding a tight 3D bounding box in milliseconds on CPU. sc-crop is
+decoupled from any segmentation model and exposes atomic
+\texttt{detect}/\texttt{crop}/\texttt{uncrop} operations, so it embeds unchanged
+into nnUNet preprocessing, SCT, or any custom pipeline. Cropping reduces the
+field of view by $\eta\approx\WRITE{[5\text{--}15,~\text{EXP-FOV}]}$, cutting
+per-volume inference time by \WRITE{[$\times$X, EXP-SPEED]} on CPU. Accuracy is
+not sacrificed --- it improves. In a controlled ablation that retrains the same
+contrast-agnostic nnUNet on cropped versus full volumes (identical data, labels
+and train/val/test split, so that only the crop differs), cropping yields a small
+but highly significant Dice gain on a frozen, multi-site, multi-contrast held-out
+set ($0.958\pm0.020$ vs.\ $0.955\pm0.028$, $n=510$, 9 contrasts, 14 datasets,
+paired Wilcoxon $p=1\times10^{-14}$) and, more importantly, improves robustness:
+it lowers variance ($\sigma=0.020$ vs.\ $0.028$) and removes catastrophic failures
+(worst-case Dice $0.77$ vs.\ $0.51$). No ground-truth voxel is lost in any subject
+($510/510$). sc-crop is open-source,
+ONNX-deployable with no deep-learning runtime dependency, and integrated into
+SCT.
+
+% ---------------------------------------------------------------------
+% EXPERIMENTS REQUIRED to back each abstract claim (NONE optional for those
+% claims — without them the sentence must be softened or cut):
+%
+%   CLAIM "cuts inference time by Xx on CPU"  [\WRITE in abstract]
+%     -> EXP-SPEED (MISSING). Like-for-like wall-clock, SAME PyTorch backend:
+%        sct_deepseg (full volume) vs sc-segment-pt (crop+nnUNet), same machine,
+%        CPU and GPU, n volumes spanning FOV sizes; split detect/segment/total.
+%        Cleanest: SAME nnUNet weights on full vs cropped input (ties to EXP-ABL).
+%        NOTE: no timing exists anywhere yet (not in metrics.json, not in
+%        bench_preprocessing.py which times only YOLO preprocessing). Until run,
+%        the "Xx" placeholder is UNSUPPORTED.
+%
+%   CLAIM "shrinks FOV by eta ~ 5-15"          [\WRITE in abstract]
+%     -> EXP-FOV (MISSING but cheap). Compute cropped-bbox-volume / original-
+%        volume per test subject from the saved bboxes (NOT voxels_before/after
+%        in metrics.json -- those are LABEL voxels, always equal => 0 lost).
+%        Report mean + range. This is the confound-free efficiency number.
+%
+%   CLAIM "at no cost in accuracy / matches-or-exceeds baseline"  [numbers real]
+%     -> Already supported by metrics.json (Dice 0.9578 vs 0.9535, n=510,
+%        Wilcoxon p=2.2e-25, 70% win). Keep as NON-INFERIORITY, not "crop helps".
+%
+%   CLAIM "preserves every GT voxel (510/510)"  [real]
+%     -> metrics.json aggregate n_bad_crops=0. Solid.
+%
+%   ENABLES any causal "cropping is responsible" statement (Discussion, NOT
+%   abstract) -> EXP-ABL (STAGED, NOT RUN): Dataset7001 no-crop twin
+%   (train_contrast_agnostic_nocrop.sh; fill REPLACE_WITH_THE_V4_DATALISTS_FOLDER
+%   with /home/quentinr/datalists/<the v4 folder>). Same split/labels/nnUNet,
+%   only the crop differs. This is the single biggest reviewer risk: without it
+%   the v3-vs-v4 Dice gain is a confounded DEPLOYMENT comparison and cannot be
+%   attributed to cropping. The abstract sidesteps this by claiming
+%   non-inferiority, not improvement -- keep it that way unless EXP-ABL is run.
+% ---------------------------------------------------------------------
+
+% \FUTURE{When new models land, the Dice/speed sentence gets a third comparison
+% point — keep the "matches or slightly exceeds" structure so it extends.}
+% \DECISION{Scope claim: sc-crop detects the CORD. It accelerates SC + intra-
+% medullary tasks (lesions/tumours, GM) whose target lies INSIDE the cord ROI.
+% Do NOT claim it accelerates general vertebral-column / whole-spine segmentation
+% — a cord-centred box + small margin does not contain the vertebral bodies or
+% posterior elements; a reviewer will reject that. Mention whole-spine only as
+% outlook, not as a demonstrated benefit.}
+
+% =====================================================================
+\section{Introduction}\label{sec:intro}
+% =====================================================================
+\paragraph{State of the art: accurate but slow.}
+Deep learning now dominates spinal cord (SC) segmentation. Across tasks ---
+segmenting the cord itself, multiple-sclerosis (MS) lesions, or intramedullary
+tumours --- the self-configuring nnUNet framework \cite{isensee2021nnunet} has
+become the de facto standard \cite{}, and in the Spinal Cord Toolbox (SCT) the
+contrast-agnostic model \texttt{sct\_deepseg spinalcord} \cite{bedard2025media} is
+built on it. The field has converged on a single \emph{contrast-agnostic} model
+because clinical scans span many contrasts (T1w, T2w, T2$^\ast$, MT, DWI, PSIR,
+STIR, MP2RAGE) and per-contrast models do not scale \cite{bedard2025media}. These
+models are highly accurate --- but slow: on the CPUs available in most clinical
+and many research settings, the deployed model can take up to $\sim$2\,min per
+volume \WRITE{[confirm with EXP-SPEED]}, too slow for use at the point of care.
+The cause is structural. In a spinal MRI the cord fills only a small fraction of
+the field of view (FOV) --- a few tenths of a percent of voxels, and far less for
+a lesion. The rest is vertebrae, cerebrospinal fluid, paraspinal tissue and air.
+Yet the model runs on the \emph{whole} volume, spending almost all of its compute
+on background, not on the cord. Speed matters because the segmentation is not an
+end in itself: it yields quantitative biomarkers --- cross-sectional area (CSA)
+and its change over time, lesion and intramedullary-tumour load --- used to track
+MS, degenerative cervical myelopathy and SC injury \cite{bedard2025media,
+karthik2026imag}. A segmenter too slow for the point of care limits how readily
+these biomarkers reach the clinic.
+
+\paragraph{Two routes to acceleration.}
+Which strategies can make such a model faster follows directly from what
+determines its cost. To first order, inference time is proportional to the number
+of arithmetic operations the network performs, and for a fully-convolutional
+segmentation network that count factorises into two independent terms. A 3D
+convolution layer costs $\mathrm{FLOPs}\propto D\,H\,W\cdot k^3\,C_{\mathrm{in}}
+C_{\mathrm{out}}$, i.e.\ \emph{linear in the number of voxels} $D H W$; summed over
+the network the total is therefore
+\begin{equation}\label{eq:flops}
+  T \;\propto\; \mathrm{FLOPs} \;\approx\; \underbrace{N}_{\text{input size}}\;\times\;
+  \underbrace{c_{\mathrm{arch}}}_{\text{architecture}},
+\end{equation}
+where $N$ is the number of voxels processed and $c_{\mathrm{arch}}$ is a per-voxel
+cost fixed by the architecture (its depth, kernel sizes and channel widths). This
+holds in the compute-bound regime typical of 3D CNNs on CPU. Because the cost is a
+\emph{product} of these two factors, there are exactly two ways to reduce it.
+(i)~Reduce $c_{\mathrm{arch}}$ --- replace the network with a lighter one. But
+$c_{\mathrm{arch}}$ is also what buys accuracy: lighter SC and medical
+segmentation architectures have so far traded accuracy for speed \cite{}, and the
+field has converged on nnUNet \cite{isensee2021nnunet} precisely because it is the
+most accurate. (ii)~Reduce $N$ --- crop the image to a region of interest (ROI)
+around the target before segmentation, leaving the architecture, and hence its
+accuracy, untouched. This \emph{localise-then-segment} strategy is already used
+across many segmentation pipelines \cite{lemay2021tumor, gros2021tumor,
+isensee2021nnunet, bencevic2023sts}: cropping shrinks $N$ by a factor
+$\eta = N_{\mathrm{full}}/N_{\mathrm{crop}}$ (\S\ref{sec:method}) and cuts time by
+the same factor per Eq.~\eqref{eq:flops}, while also removing background that would
+otherwise invite false positives. To keep nnUNet's accuracy, we take route~(ii).
+
+\paragraph{The gap: no reusable, model-agnostic crop step.}
+The difficulty is that in the SC literature this localisation stage is almost
+always rebuilt inside each segmentation pipeline. A dedicated network, often a
+heavy 3D U-Net, is trained to localise the cord, and the crop then lives only
+within that one model's loop \cite{gros2019deepseg, lemay2021tumor, gros2021tumor}.
+Two consequences follow. First, every team re-implements its own cord localiser,
+which duplicates effort and prevents a fair, shared baseline. Second, the speed of
+localise-then-segment comes from a \emph{fast single-stage} detector (YOLO-type),
+but such detectors struggle with small objects \cite{sobek2024medyolo}. So running
+one directly on a small target --- a tumour, an MS lesion, oedema --- to obtain the
+crop is unsafe: the target is small and variable, the detector can miss it, and
+anything missed at detection is cropped away and never reaches the segmenter. The
+cord is different. It is large and salient, so a fast detector localises it
+reliably, and a margin-padded box around it still contains the intramedullary
+pathology. That is exactly what speeds up and stabilises downstream segmentation
+\cite{lemay2021tumor}. But to get that crop today, each group must first solve cord
+localisation itself. What is missing is a fast, contrast-agnostic cord-cropping
+step --- decoupled from any segmentation model, droppable unchanged in front of any
+SC pipeline --- so that teams building new segmenters focus on training data and
+segmentation, not on re-solving cord localisation.
+
+\paragraph{Our approach.}
+We fill this gap with \textbf{sc-crop}, a standalone, learned SC cropper that turns
+localise-then-segment into a reusable preprocessing primitive runnable on CPU. A 2D
+axial YOLO detector \cite{} runs per slice; a connected-component classifier then
+removes superior false positives (brain stem, neck), yielding a tight 3D bounding
+box in milliseconds (Fig.~\ref{fig:pipeline}). sc-crop replaces the heavy 3D
+localiser U-Net of prior cascades with a fast 2D detector, needs no prior
+whole-volume segmentation, and exposes atomic
+\texttt{detect}/\texttt{crop}/\texttt{uncrop} operations so it embeds into nnUNet
+preprocessing, SCT, or any custom loop. In effect, it pairs the millisecond speed
+of single-stage detectors with the accuracy of a state-of-the-art nnUNet
+segmenter, left unchanged. And because it shrinks the volume the segmenter sees, it
+makes SC segmentation fast enough to run on CPU at the point of care. We validate
+it through a controlled ablation: the same contrast-agnostic nnUNet is retrained
+on cropped versus full volumes --- identical data, labels and train/val/test split,
+so the crop is the only difference --- and evaluated on a frozen, multi-site,
+multi-contrast test set ($n=510$), isolating the effect of cropping on accuracy.
+
+\paragraph{Contributions.}
+\begin{itemize}
+  \item \textbf{C1.} A reusable, contrast- and modality-agnostic cord
+        \emph{detect-and-crop} tool (2D axial YOLO + connected-component
+        classifier). It ships as a CLI and Python package, with ONNX (CPU, no
+        deep-learning runtime dependency) and PyTorch (GPU) backends
+        \WRITE{[cervical + lumbar; MRI and CT — state scope, \S\ref{sec:exp}]}.
+        This decoupled crop primitive is the methodological core.
+  \item \textbf{C2.} Evidence that detect-then-segment cuts inference cost
+        \WRITE{[$\times$X, EXP-SPEED]} while \emph{improving} accuracy --- with the
+        nnUNet architecture left untouched. In a controlled ablation (the same
+        nnUNet retrained on cropped vs full volumes; identical data, labels and
+        split, so only the crop differs), cropping gives a small but highly
+        significant Dice gain ($0.958$ vs $0.955$, $n=510$, paired Wilcoxon
+        $p=1\times10^{-14}$), lowers variance, removes catastrophic failures
+        (worst-case Dice $0.77$ vs $0.51$), and loses no ground-truth voxel
+        ($510/510$).
+  \item \textbf{C3.} An open-source release integrated into SCT. It includes an
+        automated workflow that monitors morphometric (CSA) drift across model
+        releases for lifelong learning.
+\end{itemize}
+
+% \DECISION{Page-1 figure: the pipeline overview (Fig.~\ref{fig:pipeline}) is the
+% strongest opener. The empty \cite{} after "YOLO detector" needs the Ultralytics
+% YOLO26 / ivadomed model_cropping reference once refs.bib is built.}
+
+% =====================================================================
+\section{Related Work}\label{sec:related}
+% =====================================================================
+% NOTE: literature distilled from two AI-assisted reviews (Gemini + ChatGPT).
+% The Gemini review correctly frames sc-crop as a single-stage learned detector;
+% the ChatGPT review wrongly calls it "heuristic/unsupervised" -- IGNORE that
+% framing. Real, citable references are collected in the bibliography block at
+% the end of this file. \DECISION{Verify EVERY AI-sourced citation against the
+% actual paper before submission -- some entries (anonymous "2023/2024" YOLO/
+% Faster-R-CNN spine papers) are unverified and must be dropped or replaced.}
+
+\paragraph{Why a region of interest at all.}
+\begin{itemize}
+  \item \WRITE{Extreme class imbalance: the cord is a tiny fraction of a spinal
+        volume (order $\sim$0.3\% of voxels; intramedullary lesions far less),
+        so training/inferring on whole volumes wastes compute and biases models
+        toward background. Cropping to a tight ROI mitigates imbalance, lowers
+        GPU memory, avoids out-of-memory on large anisotropic FOVs, and
+        preserves the fine in-plane resolution needed for thin structures.}
+\end{itemize}
+
+\paragraph{Classical centreline / geometric cropping.}
+\begin{itemize}
+  \item \WRITE{PropSeg \cite{deleener2014propseg}: elliptical Hough transform +
+        deformable tubular mesh propagated along the cord; fast but sensitive to
+        cord--CSF contrast and fails under severe pathology (contour leakage).}
+  \item \WRITE{OptiC \cite{gros2017optic}: global centreline optimisation
+        (HOG+SVM axial heatmap + rostro-caudal regularisation); validated on 501
+        subjects / 20 sites; robust to contrast/resolution; powers
+        \texttt{sct\_get\_centerline}.}
+  \item \WRITE{SCT does ship manual cropping utilities
+        (\texttt{sct\_create\_mask} $\to$ \texttt{sct\_crop\_image}), but they
+        are an \emph{optional, user-driven} preprocessing requiring a prior cord
+        localisation --- they are NOT invoked by the automatic segmentation
+        pipeline. \DECISION{Be precise: this is the manual route a user takes if
+        they want a crop; it is not what the current segmentation does.}}
+\end{itemize}
+
+\paragraph{Current best practice in SCT = no cropping (the baseline).}
+\begin{itemize}
+  \item \WRITE{The contrast-agnostic soft-segmentation model
+        \cite{bedard2025media, karthik2026imag}, deployed as
+        \texttt{sct\_deepseg spinalcord}, is the current state of the art for SC
+        segmentation in SCT. It is a single nnUNet \cite{isensee2021nnunet}
+        applied \emph{directly to the whole volume} --- it dropped the earlier
+        localise-then-segment cascade and performs NO cropping. It is precisely
+        the kind of pipeline that lacks a fast crop step in front, and motivates
+        the no-crop arm of our controlled ablation.}
+\end{itemize}
+
+\paragraph{Cascade / coarse-to-fine deep learning.}
+\begin{itemize}
+  \item \WRITE{Sequential dual-CNN \cite{gros2019deepseg} (the older
+        \texttt{sct\_deepseg\_sc}): 2D dilated-conv centreline heatmap $\to$ 3D
+        patches $\to$ 3D CNN segmentation; median Dice $\sim$95\% for the cord.
+        Its localisation step is effectively a learned crop --- but this cascade
+        has since been \emph{superseded} in SCT by the direct, no-crop
+        contrast-agnostic model above. \DECISION{Distinguish clearly:
+        \texttt{sct\_deepseg\_sc} (old, cascade) vs \texttt{sct\_deepseg
+        spinalcord} (current, contrast-agnostic, full-volume, no crop) --- they
+        are different methods; do not conflate.}}
+  \item \WRITE{Locate-and-label \cite{gros2021tumor}: a light 3D U-Net emits a
+        tight 3D bbox, multi-contrast images are cropped to it, then a
+        multi-class 3D U-Net segments intramedullary tumours/oedema/cavities.
+        Closest in spirit to detect-then-segment, but uses a heavy 3D U-Net to
+        localise.}
+  \item \WRITE{Lemay et al.\ \cite{lemay2021tumor} --- KEY PRECEDENT: 3D U-Net
+        localises the cord, the volume is cropped to the mask bbox, then tumour
+        segmentation runs on the crop. Reports cord localisation Dice 88.7\%
+        (100\% detection), tumour Dice +5\,pt and oedema +30\,pt vs.\ training on
+        the full image, and a faster pipeline (22\,s vs.\ 48\,s without the crop
+        step). This is the canonical evidence that cropping speeds up inference
+        AND improves Dice --- position sc-crop directly against it.}
+  \item \WRITE{nnU-Net low/high-res 3D cascade \cite{isensee2021nnunet}:
+        auto-triggered when volumes greatly exceed the 3D patch size; a coarse
+        3D U-Net provides global context to a fine one. Powerful but the coarse
+        stage still runs a full 3D network over the (downsampled) whole volume.}
+  \item \WRITE{Coarse-to-fine ROI cascades in other organs (pancreas, small
+        liver tumours): \cite{zhu2018c2f, zhou2018pancreas, wu2023liver}.}
+  \item \WRITE{Segment-then-Segment \cite{bencevic2023sts}: coarse low-res
+        segmentation $\to$ salient high-res crops $\to$ fine per-crop
+        segmentation; improves small-structure recall vs.\ plain downsampling.}
+  \item \WRITE{Limitation of axis-aligned bounding boxes (AABB)
+        \cite{shin2024aabb}: AABBs over-cover elongated/curved structures and
+        propagate first-stage false negatives --- motivates a tight, cord-aware
+        box and a safety margin (our per-face mm padding + \texttt{check\_label\_crop}).}
+\end{itemize}
+
+\paragraph{Single-stage detectors (the sc-crop family).}
+\begin{itemize}
+  \item \WRITE{YOLO-family single-pass detectors give millisecond-scale boxes;
+        widely used in spine imaging (vertebral-level/stenosis detection, disc
+        pathology). Run on 2D slices, they suit the cord's tubular geometry and
+        anisotropic acquisition while staying cheap on CPU. ivadomed's
+        \texttt{model\_cropping\_sc\_contrast-agnostic\_yolo} trains such a
+        detector for contrast-agnostic cord cropping --- the detector sc-crop
+        packages.}
+  \item \WRITE{Detection frameworks for context: nnDetection (YOLO-style heads
+        on nnU-Net), MedYOLO (3D), MONAI/TorchIO crop transforms --- mostly
+        tied to a training loop or toolbox, not a standalone reusable crop.}
+\end{itemize}
+
+\paragraph{Positioning of sc-crop (closing paragraph).}
+\begin{itemize}
+  \item \WRITE{sc-crop is a \emph{learned} single-stage detector (2D axial
+        YOLO26n + a connected-component classifier regulariser), NOT a heuristic
+        centred crop. Unlike PropSeg/OptiC chains it needs no prior whole-volume
+        segmentation and no multi-tool sequence; unlike Lemay/Locate-and-label it
+        replaces the heavy 3D localiser U-Net with a fast 2D detector; unlike
+        nnDetection/MONAI it is \emph{decoupled} from any training loop or
+        toolbox. It is distributed as ONNX (CPU, no torch/numpy conflicts) with
+        a PyTorch/GPU path, is contrast- and modality-agnostic (MRI + CT,
+        cervical + lumbar), and exposes atomic \texttt{detect/crop/uncrop} so it
+        drops into nnU-Net preprocessing, SCT, or any custom pipeline.}
+  \item \DECISION{Reuse the comparison table from sc-crop ARCHITECTURE.md
+        (MONAI/TorchIO/SCT/nnDetection/HF/Ultralytics: interface, model hosting,
+        offline-vs-online crop) as Related-Work Table or an appendix.}
+\end{itemize}
+
+% =====================================================================
+\section{Method}\label{sec:method}
+% =====================================================================
+\begin{itemize}
+  \item \textbf{Overview (Fig.~\ref{fig:pipeline}).}
+    \begin{itemize}
+      \item \WRITE{detect $\rightarrow$ crop $\rightarrow$ segment $\rightarrow$
+            uncrop, with the invariant: \emph{identical padding at train and
+            inference time}.}
+    \end{itemize}
+  \item \textbf{Detector (Fig.~\ref{fig:arch}).}
+    \begin{itemize}
+      \item \WRITE{YOLO26n, single class ``sc'', run per axial slice. Input
+            preprocessing: reorient to LAS; resample to SI=10\,mm,
+            in-plane=1\,mm; 3-channel slices (superior/current/inferior
+            neighbours); normalisation (\texttt{slice\_all}: 0.5/99.5
+            percentile per slice). Letterbox to 320 px (rectangular,
+            multiple-of-32), bit-exact with YOLO's predict().}
+      \item \WRITE{Per-slice output -> keep max-confidence box per slice
+            (conf $\geq$ 0.1).}
+    \end{itemize}
+  \item \textbf{Regularization (the key robustness component).}
+    \begin{itemize}
+      \item \WRITE{Detections are grouped into SI connected components. A second
+            YOLO \emph{classifier} (``sc'' vs ``no\_sc'', square 320 letterbox)
+            scans components from most-superior downward and keeps the first
+            validated component and everything inferior to it — removing
+            superior false positives (brain stem, neck structures).}
+      \item \WRITE{Alternative \texttt{graphtrim} regularizer (geometry-only:
+            SI gap $\geq$40\,mm or per-hop face shift) as a no-classifier
+            fallback; \texttt{none} for ablation.}
+    \end{itemize}
+  \item \textbf{3D bounding box + padding.}
+    \begin{itemize}
+      \item \WRITE{Aggregate per-slice boxes to a 3D box in native LAS voxels;
+            pad per face in mm (defaults sup=40, inf=100, L=R=15, ant=15,
+            post=22; inferior is large to cover lumbar/anisotropic cords);
+            clamp to image bounds; reorient box back to native orientation.}
+      \item \WRITE{\texttt{check\_label\_crop} / \texttt{CropReport}: QC that no
+            GT voxel is cut, reporting extra mm needed per face (how the
+            defaults were tuned).}
+    \end{itemize}
+  \item \textbf{crop / uncrop.}
+    \begin{itemize}
+      \item \WRITE{crop updates the affine so the crop sits at the correct
+            world position; uncrop pastes the segmentation back into the full
+            original space/affine.}
+    \end{itemize}
+  \item \textbf{Computational impact of cropping (backend-independent argument).}
+    \begin{itemize}
+      \item \WRITE{This instantiates route~(ii) of Eq.~\eqref{eq:flops}: with
+            $c_{\mathrm{arch}}$ fixed (the nnUNet is unchanged), inference cost is
+            linear in the voxel count $N$. A 3D conv layer costs FLOPs
+            $\propto D\,H\,W\,k^3 C_{in}C_{out}$, so cropping the input from
+            $D\times H\times W$ to $d\times h\times w$ (with margin $m$) reduces
+            compute by $\eta = N_{\mathrm{full}}/N_{\mathrm{crop}} =
+            \frac{D H W}{d h w}$, typically $\eta\!\approx\!5$--$15$ for localised
+            spinal cords. This is the speed argument \emph{attributable to cropping
+            alone}, independent of inference backend (PyTorch/ONNX) --- use it to
+            motivate the measured speedup and to decouple the crop effect from the
+            ONNX-export effect.}
+      \item \DECISION{Report the empirical FOV-reduction factor $\eta$ measured
+            on the test set (crop voxels / original voxels) alongside the
+            theoretical bound --- this is the clean, confound-free efficiency
+            result.}
+    \end{itemize}
+  \item \textbf{Inference backends \& engineering for reuse.}
+    \begin{itemize}
+      \item \WRITE{ONNX Runtime (CPU, no ultralytics/torch at runtime) vs
+            PyTorch (.pt, GPU). SHA256-pinned, versioned model cache;
+            \texttt{SC\_CROP\_CACHE\_DIR} for SCT/air-gapped HPC.}
+      \item \WRITE{Atomic public API: detect() / crop() / uncrop() — what makes
+            it embeddable (nnUNet preprocessing, SCT, custom loops).}
+    \end{itemize}
+  \item \textbf{Design choices to defend explicitly (Discussion ties back).}
+    \begin{itemize}
+      \item \WRITE{Offline cropping (never in the training loop) — matches
+            nnDetection/MONAI/SCT practice; YOLO too slow per-epoch.}
+      \item \WRITE{2D-slice detection vs 3D detector — speed, robustness to
+            anisotropy, data efficiency.}
+      \item \WRITE{ONNX distribution — eliminates dependency conflicts.}
+    \end{itemize}
+  \item \textbf{Segmentation model trained on crops (C2).}
+    \begin{itemize}
+      \item \WRITE{nnUNet 3d\_fullres; training data = sc-crop-cropped
+            image/label pairs (same padding as inference); GT cleaned to
+            largest connected component. Reference the reproducible script
+            (\texttt{train\_contrast\_agnostic.sh}, 5 steps).}
+      \item \FUTURE{If a custom nnUNet trainer that simulates random YOLO-style
+            crops during training is added, describe it here (augmentation:
+            GT bbox + 0--10\,mm / 10\,mm--max padding, 50/50). Reserve a
+            Method subsection for it.}
+    \end{itemize}
+\end{itemize}
+
+% =====================================================================
+\section{Experiments}\label{sec:exp}
+% =====================================================================
+\begin{itemize}
+  \item \textbf{Datasets \& contrasts (Table~\ref{tab:datasets}).}
+    \begin{itemize}
+      \item \RESULT{14 datasets, 9 contrasts, frozen held-out test set
+            $n=510$. Per-contrast $n$ (from \texttt{metrics.json}):
+            T2w=159, T2star=94, T1w=56, MTS flip-1/flip-2 = 49/49,
+            DWI(rec-average)=49, PSIR=33, UNIT1(MP2RAGE)=11, STIR=10.}
+      \item \RESULT{Datasets present: data-multi-subject (294), canproco (85),
+            sct-testing-large (36), PSIR/dcm-brno (28), dcm-zurich (14),
+            sci-zurich (14), basel-mp2rage (11), sci-colorado (8),
+            lumbar-vanderbilt (6), dcm-zurich-lesions-20231115 (5),
+            lumbar-epfl (3), sci-paris (2), dcm-zurich-lesions (2),
+            site\_006/007 (1/1).}
+      \item \WRITE{Answer the modality question explicitly: MRI multi-contrast
+            (T1, T2, T2*, MT, DWI, PSIR, STIR, MP2RAGE); sc-crop \emph{detector}
+            also supports CT (auto HU background detection) — state whether CT
+            is evaluated here or only claimed/qualitative.}
+      \item \WRITE{Frozen split rationale + reproducibility (predefined
+            datasplits with pinned dataset version commits).}
+    \end{itemize}
+  \item \textbf{Metrics.}
+    \begin{itemize}
+      \item \WRITE{Segmentation: Dice (soft/binary — state which) vs cleaned GT.}
+      \item \WRITE{Crop quality: fraction of subjects with zero GT voxels lost
+            (\texttt{check\_label\_crop}); FOV reduction factor.}
+      \item \WRITE{Efficiency: wall-clock inference time per volume, CPU and
+            GPU; peak memory; report hardware.}
+      \item \WRITE{Morphometric agreement: C2--C3 CSA vs reference; CSA std
+            across contrasts (lifelong-drift metric).}
+      \item \FUTURE{Add detector-only metrics if you run a detection ablation
+            (recall of cord coverage, bbox IoU) — optional.}
+    \end{itemize}
+  \item \textbf{Baselines.}
+    \begin{itemize}
+      \item \WRITE{Primary comparison = controlled crop ablation: the same
+            contrast-agnostic nnUNet trained on FULL volumes (no crop) vs on
+            sc-crop crops, with identical data, labels and train/val/test split.
+            Only the crop differs, so any Dice difference is attributable to
+            cropping. (The previously deployed model is intentionally NOT used as
+            an accuracy baseline: it was under-trained, so a comparison against it
+            would not isolate cropping.)}
+      \item \WRITE{Pipeline variants for the speed comparison: sc-crop + nnUNet
+            PyTorch (\texttt{sc-segment-pt}) and ONNX (\texttt{sc-segment-onnx}).}
+      \item \FUTURE{Reserve baseline slots for future model versions (vX.Y).}
+    \end{itemize}
+  \item \textbf{Implementation / reproducibility.}
+    \begin{itemize}
+      \item \WRITE{Versions: sc-crop v0.4.1, detector model v0.0.10, nnUNet
+            v2.6.0 pin, PyTorch 2.8; cite VERSIONS.md mapping. Release the
+            frozen split YAML and the training/test shell scripts.}
+    \end{itemize}
+\end{itemize}
+
+% =====================================================================
+\section{Results}\label{sec:results}
+% =====================================================================
+\begin{itemize}
+  \item \textbf{R1 — Segmentation accuracy: crop ablation (Table~\ref{tab:dice}, done).}
+    \begin{itemize}
+      \item \RESULT{Controlled ablation, crop vs no-crop ($n=510$): cropping
+            raises overall Dice from $0.9548\pm0.0282$ (no-crop) to
+            $0.9578\pm0.0201$ (crop). Paired Wilcoxon $p=1.1\times10^{-14}$;
+            cropping wins in $64.9\%$ of subjects (median $\Delta=+0.0019$).
+            Source: \texttt{qc\_results\_dataset7000} (crop) and
+            \texttt{qc\_results\_dataset7001} (no-crop).}
+      \item \RESULT{Robustness is the larger effect: cropping cuts variance by
+            $\sim$29\% ($\sigma=0.0201$ vs $0.0282$), raises the worst case from
+            Dice $0.51$ to $0.77$, and reduces sub-$0.90$ subjects ($9$ vs $11$).}
+      \item \RESULT{Per-contrast (Table~\ref{tab:dice}): cropping improves mean
+            Dice in \emph{all 9} contrasts and never degrades any. The gain is
+            significant for T2w, T2$^\ast$, T1w, MTS (both flips) and STIR, and at
+            parity on the well-covered/small-$n$ contrasts (DWI, PSIR, UNIT1).}
+      \item \WRITE{Ready-to-use sentence (EN): ``Retraining the same
+            contrast-agnostic nnUNet on cropped instead of full volumes improves
+            mean Dice in all nine contrasts (significant overall, paired Wilcoxon
+            $p=1.1\times10^{-14}$), and its main benefit is robustness: it lowers
+            variance and removes catastrophic failures (worst-case Dice $0.51
+            \rightarrow 0.77$).'' (FR): ``R\'eentra\^iner le m\^eme mod\`ele sur
+            des volumes crop\'es plut\^ot que complets am\'eliore le Dice moyen
+            dans les neuf contrastes (significatif globalement, $p=1.1\times
+            10^{-14}$), et son b\'en\'efice principal est la robustesse : variance
+            r\'eduite et disparition des \'echecs catastrophiques.''}
+      \item \FUTURE{Empty column reserved for vX.Y / future models in
+            Table~\ref{tab:dice}.}
+    \end{itemize}
+  \item \textbf{R2 — Crop quality (Table~\ref{tab:crop}).}
+    \begin{itemize}
+      \item \RESULT{$0/510$ subjects lost any GT voxel (n\_bad\_crops $=0$).
+            Source: \texttt{metrics.json} aggregate.}
+      \item \WRITE{Report FOV reduction (mean voxels\_after / voxels\_before, or
+            volume ratio) to quantify how much background is removed.}
+    \end{itemize}
+  \item \textbf{R3 — Inference speed (Table~\ref{tab:speed}).}
+    \begin{itemize}
+      \item \DECISION{Drop ONNX from the speed comparison. The issue-\#2
+            ``$\sim$10$\times$'' is \texttt{sc-segment-onnx} vs
+            \texttt{sct\_deepseg} --- it mixes the ONNX export with the crop, so
+            it cannot show that cropping is what speeds things up. Compare
+            SAME-backend instead.}
+      \item \WRITE{Empirical FOV reduction $\eta$ = crop voxels / original
+            voxels on the test set (the clean, backend-free efficiency number);
+            report mean and range, expected $\approx$5--15.}
+      \item \WRITE{Like-for-like wall-clock: \texttt{sct\_deepseg} (full volume)
+            vs \texttt{sc-segment-pt} (crop + nnUNet, PyTorch), same machine;
+            split detector vs segmentation vs total, CPU and GPU. \DECISION{The
+            cleanest version measures the SAME nnUNet on full vs cropped input
+            --- ties to the optional no-crop ablation in \S\ref{sec:exp}.}}
+      \item \WRITE{Keep ONNX only as a separate ``deployment'' note (no torch at
+            runtime, $\sim$10$\times$ vs baseline), clearly NOT attributed to
+            cropping.}
+      \item \FUTURE{Reserve rows for future backends/models.}
+    \end{itemize}
+  \item \textbf{R4 — Morphometric / lifelong monitoring (Fig.~\ref{fig:csa}).}
+    \begin{itemize}
+      \item \WRITE{CSA C2--C3 violin plots per contrast across model releases;
+            CSA std across contrasts as the drift metric. These are produced
+            automatically by the GitHub Action on each release
+            (\texttt{morphometric\_plots.zip}).}
+      \item \FUTURE{This figure literally grows by one model per release — it
+            is the natural ``future models'' result. Describe it as a living
+            benchmark.}
+    \end{itemize}
+  \item \textbf{R5 — Qualitative (Fig.~\ref{fig:qual}).}
+    \begin{itemize}
+      \item \WRITE{Crops + segmentations across the hardest contrasts
+            (PSIR/STIR/MP2RAGE, lumbar, SCI lesions); show a failure/edge case
+            honestly.}
+    \end{itemize}
+\end{itemize}
+
+% =====================================================================
+\section{Discussion and Limitations}\label{sec:discussion}
+% =====================================================================
+\begin{itemize}
+  \item \textbf{Discussion.}
+    \begin{itemize}
+      \item \WRITE{Why crop-then-segment helps: removes background false
+            positives, lets nnUNet spend capacity/resolution on the cord;
+            decouples a reusable crop step from the segmentation model.}
+      \item \WRITE{Practical impact: $\sim$10$\times$ CPU speedup makes
+            laptop/clinical-PC inference feasible; ONNX removes dependency
+            friction; SCT integration = real deployment.}
+      \item \WRITE{Generality: same crop tool for other SC tasks (lesions,
+            tumors, gray matter) and CT.}
+    \end{itemize}
+  \item \textbf{Limitations.}
+    \begin{itemize}
+      \item \WRITE{The mean Dice gain from cropping is small ($+0.0029$, $\sim
+            0.3$\,pt) though highly significant ($p=1.1\times10^{-14}$); the
+            primary accuracy benefit is robustness (lower variance, removal of
+            catastrophic failures) rather than a large mean jump. Because the
+            ablation is fully controlled --- only the crop differs --- the gain is
+            attributable to cropping, but its magnitude should not be oversold.}
+      \item \WRITE{Test set is imbalanced across contrasts/pathologies
+            (T2w-heavy; STIR/MP2RAGE small $n$); few severe-pathology cases.}
+      \item \WRITE{Fixed padding assumes the detector+margin always contains
+            the cord — quantify residual risk (here $0/510$, but acknowledge
+            distribution shift / extreme FOVs).}
+      \item \WRITE{CT support is implemented but report its actual evaluation
+            scope honestly.}
+      \item \WRITE{Detector failure modes: very anisotropic sagittal,
+            superior false positives handled by cls but not infallible.}
+    \end{itemize}
+\end{itemize}
+
+% =====================================================================
+\section{Conclusion}\label{sec:conclusion}
+% =====================================================================
+\begin{itemize}
+  \item \WRITE{Restate: a lightweight, contrast-agnostic, reusable detect+crop
+        step improves SC segmentation accuracy and substantially cuts
+        inference cost, is deployed in SCT, and is monitored over time.}
+  \item \WRITE{Outlook: more contrasts/pathologies per release; the living CSA
+        benchmark; crop step as a general SC-ROI primitive.}
+\end{itemize}
+
+% =====================================================================
+\section*{Data and Code Availability}
+% =====================================================================
+% Required by MedIA / Imaging Neuroscience.
+\begin{itemize}
+  \item \WRITE{sc-crop (CLI + package, ONNX/PT models, SHA256-pinned releases);
+        contrast-agnostic training/eval scripts + frozen split; SCT integration
+        branch; GitHub Action for CSA monitoring. List repos + versions.}
+\end{itemize}
+
+% =====================================================================
+%  FIGURES & TABLES — skeletons (fill captions/data)
+% =====================================================================
+
+\begin{figure}[t]\centering
+  \fbox{\parbox{0.9\linewidth}{\centering \WRITE{Fig 1 — pipeline:
+  detect $\to$ crop $\to$ segment $\to$ uncrop, with ``same padding train/infer''
+  invariant. Reuse the sc-crop README banner as a base.}}}
+  \caption{End-to-end detect-then-segment pipeline.}
+  \label{fig:pipeline}
+\end{figure}
+
+\begin{figure}[t]\centering
+  \fbox{\parbox{0.9\linewidth}{\centering \WRITE{Fig 2 — sc-crop architecture:
+  2D axial YOLO detector per slice + connected-component classifier
+  regularization + 3D bbox aggregation + mm padding. The debug-panel mosaic
+  (\texttt{save\_debug\_panel}) makes a great real example.}}}
+  \caption{sc-crop detector and connected-component regularization.}
+  \label{fig:arch}
+\end{figure}
+
+\begin{figure}[t]\centering
+  \fbox{\parbox{0.9\linewidth}{\centering \FUTURE{Fig 3 (CSA monitoring) —
+  reuse \texttt{imag.a.1105\_fig2.png} / the auto-generated
+  \texttt{morphometric\_plots.zip}; grows by one model per release.}}}
+  \caption{Lifelong CSA-drift monitoring across model releases.}
+  \label{fig:csa}
+\end{figure}
+
+\begin{figure}[t]\centering
+  \fbox{\parbox{0.9\linewidth}{\centering \WRITE{Fig 4 — qualitative crops +
+  segmentations across hard contrasts; include one honest failure case.}}}
+  \caption{Qualitative results across contrasts.}
+  \label{fig:qual}
+\end{figure}
+
+\begin{table}[t]\centering
+  \caption{Test set: datasets and contrasts ($n=510$). \RESULT{numbers from
+  \texttt{metrics.json}}.}
+  \label{tab:datasets}
+  \begin{tabular}{lrr}
+    \toprule
+    Contrast & $n$ & \WRITE{Datasets} \\
+    \midrule
+    T2w        & 159 & \WRITE{} \\
+    T2star     & 94  & \WRITE{} \\
+    T1w        & 56  & \WRITE{} \\
+    MTS flip-1 & 49  & \WRITE{} \\
+    MTS flip-2 & 49  & \WRITE{} \\
+    DWI        & 49  & \WRITE{} \\
+    PSIR       & 33  & \WRITE{} \\
+    MP2RAGE (UNIT1) & 11 & \WRITE{} \\
+    STIR       & 10  & \WRITE{} \\
+    \midrule
+    \textbf{Total} & \textbf{510} & 14 datasets \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[t]\centering
+  \caption{Crop ablation: segmentation accuracy by contrast (Dice, mean$\pm$std).
+  no-crop = the contrast-agnostic nnUNet trained on FULL volumes; crop = the same
+  nnUNet trained on sc-crop crops (identical data, labels and split --- only the
+  crop differs). $\Delta$ = crop $-$ no-crop; $p$ = paired Wilcoxon per contrast.
+  \RESULT{All values computed from \texttt{qc\_results\_dataset7001} (no-crop) and
+  \texttt{qc\_results\_dataset7000} (crop), $n=510$.}}
+  \label{tab:dice}
+  \begin{tabular}{lrcccc}
+    \toprule
+    Contrast & $n$ & no-crop & crop & $\Delta$ & $p$ \\
+    \midrule
+    T2w               & 159 & $0.9537\pm0.0428$ & $0.9570\pm0.0250$ & $+0.0033$ & $1.9\times10^{-2}$ \\
+    T2star            & 94  & $0.9615\pm0.0136$ & $0.9649\pm0.0111$ & $+0.0033$ & $2.3\times10^{-5}$ \\
+    T1w               & 56  & $0.9548\pm0.0193$ & $0.9581\pm0.0181$ & $+0.0033$ & $7.4\times10^{-6}$ \\
+    MTS flip-1        & 49  & $0.9586\pm0.0156$ & $0.9622\pm0.0121$ & $+0.0036$ & $8.8\times10^{-4}$ \\
+    MTS flip-2        & 49  & $0.9510\pm0.0249$ & $0.9545\pm0.0259$ & $+0.0035$ & $7.7\times10^{-4}$ \\
+    DWI               & 49  & $0.9570\pm0.0092$ & $0.9574\pm0.0094$ & $+0.0005$ & $0.49$ (ns) \\
+    PSIR              & 33  & $0.9406\pm0.0190$ & $0.9413\pm0.0195$ & $+0.0007$ & $0.83$ (ns) \\
+    UNIT1 (MP2RAGE)   & 11  & $0.9616\pm0.0093$ & $0.9646\pm0.0113$ & $+0.0030$ & $0.17$ (ns) \\
+    STIR              & 10  & $0.9380\pm0.0103$ & $\mathbf{0.9434\pm0.0089}$ & $+0.0054$ & $3.9\times10^{-3}$ \\
+    \midrule
+    \textbf{Overall}  & 510 & $0.9548\pm0.0282$ & $\mathbf{0.9578\pm0.0201}$ & $+0.0029$ & $1.1\times10^{-14}$ \\
+    \bottomrule
+  \end{tabular}
+  \\[2pt]\footnotesize Overall paired Wilcoxon (crop vs no-crop, $n=510$):
+  $p=1.1\times10^{-14}$, median $\Delta=+0.0019$, crop wins $64.9\%$. Cropping
+  improves mean Dice in all 9 contrasts and never degrades any; the variance drop
+  ($\sigma=0.0201$ vs $0.0282$) and worst-case improvement ($0.51\rightarrow0.77$)
+  are the dominant effect.
+\end{table}
+
+\begin{table}[t]\centering
+  \caption{Crop quality (\texttt{check\_label\_crop}).}
+  \label{tab:crop}
+  \begin{tabular}{lc}
+    \toprule
+    Metric & Value \\
+    \midrule
+    Subjects with zero GT voxel lost            & $510/510$ \RESULT{(n\_bad\_crops=0)} \\
+    Mean label-voxel preservation ratio         & $1.0000$ (min $1.0000$) \RESULT{} \\
+    Mean FOV reduction (crop vol / orig vol)     & \WRITE{NOT in metrics.json --- compute separately} \\
+    \bottomrule
+  \end{tabular}
+  \\[2pt]\footnotesize \DECISION{In \texttt{metrics.json},
+  \texttt{voxels\_before}/\texttt{voxels\_after} are \emph{label} voxels
+  (crop-safety: total vs kept), NOT field of view. They are equal for every
+  subject ($\Rightarrow$ 0 lost). To report how much background the crop
+  removes (a key efficiency argument), compute cropped-volume/original-volume
+  separately from the bbox vs image dimensions.}
+\end{table}
+
+\begin{table}[t]\centering
+  \caption{Inference speed per volume, SAME backend on both sides so the
+  difference is attributable to cropping (not to ONNX). \WRITE{Fill from a
+  controlled timing run; add a GPU block.}}
+  \label{tab:speed}
+  \begin{tabular}{lcccc}
+    \toprule
+    Method (PyTorch backend) & FOV factor $\eta$ & Detect (s) & Segment (s) & Total (s) \\
+    \midrule
+    \texttt{sct\_deepseg spinalcord} (full volume) & $1$ & --- & \WRITE{} & \WRITE{} \\
+    \texttt{sc-segment-pt} (crop + nnUNet)         & \WRITE{$\approx$5--15} & \WRITE{} & \WRITE{} & \WRITE{} \\
+    \FUTURE{future model}                          &     &     &     &     \\
+    \bottomrule
+  \end{tabular}
+  \\[2pt]\footnotesize \DECISION{ONNX (\texttt{sc-segment-onnx}) is deliberately
+  excluded here --- its $\sim$10$\times$ vs baseline mixes the ONNX export with
+  the crop. Mention ONNX only as a deployment note in the text.}
+\end{table}
+
+% =====================================================================
+\section*{Authoring checklist (delete before submission)}
+% =====================================================================
+\begin{itemize}
+  \item \DECISION{Run the no-crop nnUNet ablation — biggest reviewer risk.}
+  \item \DECISION{Get exact speed numbers SAME-backend (crop vs full, CPU+GPU)
+        into Tab.~\ref{tab:speed}; ONNX excluded from the attribution.}
+  \item \WRITE{Compute empirical FOV factor $\eta$ on the test set.}
+  \item \DECISION{Verify EVERY AI-sourced citation below against the real paper;
+        drop the unverified anonymous spine-YOLO/Faster-R-CNN entries.}
+  \item \WRITE{Build \texttt{refs.bib} from the keys used in Related Work and add
+        \texttt{\textbackslash bibliography\{refs\}}.}
+  \item \DECISION{State CT evaluation scope (evaluated vs claimed).}
+  \item \DECISION{Confirm author list + target venue + template.}
+\end{itemize}
+
+% =====================================================================
+%  REFERENCES — seed list for refs.bib (VERIFY each before use)
+% =====================================================================
+% Verified, clearly-real (use these):
+%   deleener2014propseg  De Leener et al., "Robust, accurate and fast automatic
+%                        segmentation of the spinal cord" (PropSeg), NeuroImage 2014.
+%   gros2017optic        Gros et al., "Automatic spinal cord localization,
+%                        robust to MRI contrasts using global curve optimization"
+%                        (OptiC), Medical Image Analysis 2018 (501 subj / 20 sites).
+%   gros2019deepseg      Gros et al., "Automatic segmentation of the spinal cord
+%                        and intramedullary MS lesions on MRI" (sct_deepseg_sc),
+%                        NeuroImage 2019.
+%   gros2021tumor        Gros et al., locate-and-label intramedullary tumour
+%                        segmentation (multi-class 3D U-Net cascade).
+%   lemay2021tumor       Lemay et al., "Automatic Multiclass Intramedullary
+%                        Spinal Cord Tumor Segmentation on MRI with Deep
+%                        Learning", NeuroImage:Clinical 31:102766, 2021.
+%                        (KEY precedent: crop 22s vs 48s, Dice +5pt tumour.)
+%   isensee2021nnunet    Isensee et al., "nnU-Net", Nature Methods 2021.
+%   bencevic2023sts      Benčević et al., "Segment-then-Segment", Sensors
+%                        23(2):633, 2023.
+%   cheng2021vertebrae   Cheng et al., two-stage Dense-U-Net vertebrae
+%                        localization+segmentation, Sci. Rep. 11:22156, 2021.
+%   zhu2018c2f           Zhu et al., "A 3D Coarse-to-Fine Framework for
+%                        Volumetric Medical Image Segmentation", 3DV 2018.
+%   zhou2018pancreas     Zhou et al., dense-regression pancreas, MICCAI 2018.
+%   wu2023liver          Wu et al., coarse-to-fine small liver tumour
+%                        detection+segmentation, Diagnostics 13(15):2504, 2023.
+%   shin2024aabb         Shin et al. (2024), limits of axis-aligned bounding
+%                        boxes for elongated structures. [VERIFY exact ref]
+%   bedard2025media      Bédard, Karthik et al., "Towards contrast-agnostic soft
+%                        segmentation of the spinal cord", Medical Image
+%                        Analysis 101:103473, 2025. (already in repo README)
+%   karthik2026imag      Karthik et al., "Monitoring morphometric drift in
+%                        lifelong learning segmentation of the spinal cord",
+%                        Imaging Neuroscience 2026. (repo README)
+%   cohenadad2021spinegeneric  Cohen-Adad et al., Spine-Generic open-access
+%                        qMRI dataset, Sci. Data 8:219, 2021.
+%   sobek2024medyolo     Sobek et al., "MedYOLO: A Medical Image Object Detection
+%                        Framework", J. Imaging Inform. Med. 2024. (3D single-stage
+%                        detector; cited for small-object difficulty in Intro §gap.)
+%                        [VERIFY exact venue/year before submission]
+%
+% UNVERIFIED (do NOT cite until confirmed; came from AI reviews as "anonymous"):
+%   - "YOLO11 cervical-compression 2024", "ViT axial-GRE compression 2024",
+%     "Faster R-CNN SCI 2023", "YOLOv4 spinal neoplasms 2023". Either find the
+%     real papers or drop them.
+%
+% TOOLS (cite software/manuals as needed): SCT, MONAI, TorchIO, nnDetection,
+%   Ultralytics YOLO, ivadomed/model_cropping_sc_contrast-agnostic_yolo.
+
+\end{document}

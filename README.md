@@ -1,5 +1,10 @@
 # sc-crop — Spinal cord detection and cropping
 
+<img width="1635" height="977" alt="image" src="https://github.com/user-attachments/assets/882bb621-685d-4efa-bc45-f484cfe78ab0" />
+
+
+
+
 Segmentation models for spinal cord pathologies (tumors, lesions, SC itself) are typically trained and run on full volumes where the spinal cord occupies only a small fraction of the volume. **sc-crop** solves this by automatically detecting the spinal cord and cropping the volume tightly around it, so your segmentation model only ever sees the relevant region.
 
 This reduces memory usage, speeds up inference, and often improves model accuracy by removing irrelevant background. The recommended workflow is:
@@ -43,45 +48,64 @@ pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.4.1"
 
 > The environment where sc-crop was installed must be active for the `sc_crop` command to be available.
 
-### Quick test — download the test image
+### Quick start — download the test data
+
+Image and label are available from the same release:
 
 ```bash
 mkdir ~/sc-crop-test && cd ~/sc-crop-test
 curl -L https://github.com/ivadomed/sc-crop/releases/download/test-data/t2.nii.gz -o t2.nii.gz
-```
-
-### Get the bounding box coordinates
-
-```bash
-sc_crop -i t2.nii.gz -o t2_bbox.txt
-```
-
-_The command prints a ready-to-use `sct_crop_image` command to crop the image using the detected coordinates (if [SCT](https://spinalcordtoolbox.com) is installed)._
-
-### Crop the volume
-
-Use the bbox file produced by the detect step to crop any volume — image, label, or both with identical boundaries:
-
-```bash
-sc_crop -i t2.nii.gz     --bbox t2_bbox.txt -o t2_crop.nii.gz
-```
-
-```bash
 curl -L https://github.com/ivadomed/sc-crop/releases/download/test-data/t2_seg.nii.gz -o t2_seg.nii.gz
-sc_crop -i t2_seg.nii.gz --bbox t2_bbox.txt -o t2_seg_crop.nii.gz
+```
+
+### Crop the image
+
+```bash
+sc_crop -i t2.nii.gz
+```
+
+Three files are written:
+
+| File | Content |
+|---|---|
+| `t2_crop.nii.gz` | Cropped image (affine origin updated) |
+| `t2_cropbox.nii.gz` | Binary mask of the bounding box used (FSLeyes overlay) |
+| `t2_bbox.txt` | Bounding box coordinates in voxel space (human-readable) |
+
+The command also prints a ready-to-use FSLeyes command to visualise the crop and its bounding box:
+
+```bash
+fsleyes t2.nii.gz t2_crop.nii.gz t2_cropbox.nii.gz -ot mask -mc 1 0 0 --outline -w 3 &
+```
+
+<table><tr>
+<td><img width="560" alt="FSLeyes bounding box overlay" src="https://github.com/user-attachments/assets/510fff6e-5436-47d1-89b3-ebe549e38449" /></td>
+<td><img width="200" alt="FSLeyes overlay panel" src="https://github.com/user-attachments/assets/4d83d93d-efc5-4695-97f3-0535aec30fce" /></td>
+</tr></table>
+
+
+
+### Crop a label with the same bounding box
+
+Use the `t2_cropbox.nii.gz` (or `t2_bbox.txt`) produced above to crop any other volume — label, atlas, or additional contrast — with the exact same boundaries:
+
+```bash
+sc_crop -i t2_seg.nii.gz --bbox t2_cropbox.nii.gz -o t2_seg_crop.nii.gz
 ```
 
 ### Adjust the bounding box margin
 
 ```bash
-sc_crop -i t2.nii.gz -o t2_crop.nii.gz --detect-crop --pad-sup 50 --pad-inf 80 --pad-left 10 --pad-right 10 --pad-ant 15 --pad-post 15
+sc_crop -i t2.nii.gz --pad-sup 50 --pad-inf 80 --pad-left 10 --pad-right 10 --pad-ant 15 --pad-post 15
 ```
 
 ```bash
-sc_crop -i t2.nii.gz -o t2_crop.nii.gz --detect-crop --pad-si 30 --pad-rl 10 --pad-ap 15
+sc_crop -i t2.nii.gz --pad-si 30 --pad-rl 10 --pad-ap 15
 ```
 
 Priority: individual (e.g. `--pad-sup`) > symmetric (e.g. `--pad-si`) > default.
+
+Use `--detect` to run detection only (outputs cropbox + bbox.txt, skips the crop step).
 
 Run `sc_crop --help` for all options.
 
