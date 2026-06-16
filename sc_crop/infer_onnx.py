@@ -18,6 +18,13 @@ import numpy as np
 
 _IMGSZ   = 320
 _STRIDE  = 32
+# Minimum padded side. The exported detector embeds a TopK(k=300); the detection
+# grid must therefore yield >= 300 anchors. A 320xS input gives, over strides
+# 8/16/32, (320/8)(S/8)+(320/16)(S/16)+(320/32)(S/32) anchors: S=32 -> 210 (fails),
+# S=64 -> 420 (safe). Flooring the short side at 64 guarantees >300 anchors for the
+# extremely anisotropic volumes that would otherwise crash, and is bit-exact for
+# every normal image (320 is a multiple of _STRIDE, so the padding is unchanged).
+_MIN_SIDE = 64
 _CLS_SC_IDX = 1   # alphabetical: 0=no_sc, 1=sc
 
 
@@ -39,8 +46,12 @@ def _letterbox_detect(sl: np.ndarray) -> tuple:
     h0, w0 = rgb.shape[:2]
     scale = min(_IMGSZ / h0, _IMGSZ / w0)
     new_w, new_h = int(round(w0 * scale)), int(round(h0 * scale))
-    dw = ((_IMGSZ - new_w) % _STRIDE) / 2
-    dh = ((_IMGSZ - new_h) % _STRIDE) / 2
+    # pad each side to a multiple of _STRIDE, floored at _MIN_SIDE so the grid
+    # always has >= 300 anchors (== current behaviour whenever the result is >= 64).
+    tgt_w = max(_MIN_SIDE, ((new_w + _STRIDE - 1) // _STRIDE) * _STRIDE)
+    tgt_h = max(_MIN_SIDE, ((new_h + _STRIDE - 1) // _STRIDE) * _STRIDE)
+    dw = (tgt_w - new_w) / 2
+    dh = (tgt_h - new_h) / 2
     resized = cv2.resize(rgb, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
