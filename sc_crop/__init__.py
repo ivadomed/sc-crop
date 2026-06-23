@@ -30,6 +30,6 @@ from .qc import check_label_crop, CropReport, save_bbox_nifti, check_seg_truncat
 from .download import download, ensure_model, ensure_cls_model, _MODEL_TAG
 from .segment import segment_onnx, segment_pt
 
-__version__       = "0.5.0"
+__version__       = "0.6.0"
 __model_version__ = _MODEL_TAG
 MODEL_VERSION     = _MODEL_TAG

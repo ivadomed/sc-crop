@@ -169,14 +169,13 @@ def example_restore(img_path: str, seg_path: str) -> None:
     print(f"  verify: fsleyes {img_path} {out} -cm red")
 
 
-# ─── Example 6 — GPU inference (PyTorch, no ONNX) ────────────────────────────
+# ─── Example 6 — GPU inference ───────────────────────────────────────────────
 
 def example_gpu(img_path: str, _seg_path: str, device: str = "cuda") -> None:
-    """Use PyTorch inference on GPU instead of the default ONNX Runtime."""
-    print("\n── Example 6: GPU inference (--no-onnx) ─────────────────────────")
-    print("  (requires: pip install 'sc-crop[yolo]'  and  CUDA/MPS device)")
+    """Run inference on GPU by passing device='cuda' (or 'mps' on Apple Silicon)."""
+    print("\n── Example 6: GPU inference ─────────────────────────────────────")
     try:
-        bbox = detect(img_path, use_onnx=False, device=device)
+        bbox = detect(img_path, device=device)
         print(f"  GPU ({device}) inference bbox: x[{bbox['xmin']}:{bbox['xmax']}]")
     except Exception as exc:
         print(f"  skipped — {exc}")
@@ -190,7 +189,7 @@ EXAMPLES = {
     3: ("Padding variants",                        example_padding),
     4: ("detect_and_crop() one-liner",             example_detect_and_crop),
     5: ("crop label + uncrop()",     example_restore),
-    6: ("GPU inference (PyTorch, skip if no GPU)", example_gpu),
+    6: ("GPU inference (skip if no GPU)",           example_gpu),
 }
 
 
