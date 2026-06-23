@@ -592,7 +592,7 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
     from ultralytics import YOLO
     import onnxruntime as ort
     model_file = Path(model_path) if model_path else ensure_model()
-    det_model = YOLO(str(model_file))
+    det_model = YOLO(str(model_file), task="detect")
     cls_sess  = ort.InferenceSession(str(ensure_cls_model())) if regularization == "cls" else None
 
     si_zoom  = zooms[2] / si_res
