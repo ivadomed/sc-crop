@@ -25,21 +25,21 @@ Fresh dedicated environment (for testing):
 
 ```bash
 conda create -n sc_crop python=3.13 && conda activate sc_crop
-pip install git+https://github.com/ivadomed/sc-crop.git@v0.4.1
+pip install sc-crop
 ```
 
 Or into an existing environment:
 
 ```bash
-pip install git+https://github.com/ivadomed/sc-crop.git@v0.4.1
+pip install sc-crop
 ```
 
-*To pin in a `requirements.txt`: add `sc-crop @ git+https://github.com/ivadomed/sc-crop.git@v0.4.1`*
+*To pin in a `requirements.txt`: add `sc-crop>=0.6.0`*
 
-For GPU inference (adds `ultralytics`):
+To install from source (latest development version):
 
 ```bash
-pip install "sc-crop[yolo] @ git+https://github.com/ivadomed/sc-crop.git@v0.4.1"
+pip install git+https://github.com/ivadomed/sc-crop.git
 ```
 
 ---
@@ -330,7 +330,7 @@ python examples/api_examples.py t2.nii.gz --ex 3 # run example 3 only (padding)
 | 3 | Padding variants: default / symmetric / mixed / full individual |
 | 4 | `detect_and_crop()` one-liner |
 | 5 | Fake segmentation model + `uncrop()` round-trip |
-| 6 | GPU inference (`use_onnx=False`) |
+| 6 | GPU inference (`device="cuda"`) |
 
 **`examples/infer_with_sc_crop.py`** — Full inference pipeline template with a built-in fake model (center-cylinder segmentation). If no input is provided, the SCT tutorial T2 is downloaded automatically:
 
@@ -345,9 +345,9 @@ Replace `fake_sc_segmentation()` with your own model to use in production.
 
 ## Requirements
 
-Python ≥ 3.8. Core dependencies installed automatically: `nibabel`, `numpy`, `pillow`, `pyyaml`, `onnxruntime`, `opencv-python-headless`, `scipy`.
+Python ≥ 3.8. Dependencies installed automatically: `nibabel`, `numpy`, `onnxruntime`, `pillow`, `pyyaml`, `scipy`, `ultralytics` (includes `opencv`).
 
-`ultralytics` is optional — required only for GPU/PyTorch inference (`use_onnx=False`) and the debug panel (`debug=True`). Install with the `[yolo]` extra above.
+Optional: `nnunet-onnx` for the `segment_onnx` / `segment_pt` functions — install with `pip install "sc-crop[segment]"`.
 
 ---
 
