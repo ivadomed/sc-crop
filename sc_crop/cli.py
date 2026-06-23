@@ -11,8 +11,8 @@ Three modes, selected automatically from the arguments:
     sc_crop -i t2.nii.gz -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311
     sc_crop -i t2.nii.gz --crop -xmin 12 -xmax 54 -ymin 72 -ymax 164 -zmin 0 -zmax 311 [-o out.nii.gz]
 
-  Detect + crop (--detect-crop flag):
-    sc_crop -i t2.nii.gz --detect-crop [-o out.nii.gz]
+  Detect + crop (default — no flag needed):
+    sc_crop -i t2.nii.gz [-o out.nii.gz]
 
   Download models:
     sc_crop download
@@ -114,7 +114,7 @@ examples:
 
     # ── Detection options ─────────────────────────────────────────────────────
     parser.add_argument("--model", default=None,
-                        help="Path to model.pt (override sc_crop/models/)")
+                        help="Path to model.onnx (override auto-downloaded model)")
     pad = parser.add_argument_group("padding (mm, detect / detect-crop) — individual > symmetric > default")
     pad.add_argument("--pad-sup",  type=float, default=None, dest="pad_superior",  metavar="MM")
     pad.add_argument("--pad-inf",  type=float, default=None, dest="pad_inferior",  metavar="MM")
@@ -131,19 +131,11 @@ examples:
                         help="Post-processing regularization strategy (default: from model config)")
     parser.add_argument("--cls-conf", type=float, default=None, dest="cls_conf",
                         help="Confidence threshold for the classification head (cls regularization)")
-    parser.add_argument("--no-onnx", dest="use_onnx", action="store_false",
-                        help="Use PyTorch instead of ONNX for inference (requires ultralytics)")
-    parser.set_defaults(use_onnx=True)
     parser.add_argument("--device", default=None,
                         help="Inference device: 'cpu', 'cuda', 'cuda:0', … (default: auto)")
     parser.add_argument("--norm-scope", dest="norm_scope", default="volume",
                         choices=["volume", "slice_all", "slice"],
                         help="Intensity normalisation scope: volume (default), slice_all (all voxels per slice), or slice (foreground only per slice)")
-    parser.add_argument("--debug", action="store_true",
-                        help="Save debug panel image alongside the output")
-    parser.add_argument("--time",  action="store_true",
-                        help="Print timing breakdown for each detection step")
-
     args = parser.parse_args()
     input_path = args.input_flag or args.input
     if not input_path:
@@ -200,10 +192,7 @@ examples:
         regularization = args.regularization,
         cls_conf       = args.cls_conf,
         device         = args.device,
-        use_onnx       = args.use_onnx,
         norm_scope     = args.norm_scope,
-        debug          = args.debug,
-        time_steps     = args.time,
     )
 
     parent, stem = _stem(input_path)

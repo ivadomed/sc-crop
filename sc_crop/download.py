@@ -1,19 +1,11 @@
 """
 Model download for sc_crop.
 
-Models are cached in ~/.cache/sc_crop/<model_version>/ so multiple versions of
-sc-crop installed in different envs can coexist without interfering. On every load,
-the SHA256 of the cached file is verified — if it mismatches, the file is re-downloaded.
+Models are cached in ~/.cache/sc_crop/<model_version>/. SHA256 is verified on every load.
+The model version (_MODEL_TAG) is decoupled from the package version.
 
-The model version (_MODEL_TAG) is intentionally decoupled from the package version:
-upgrading sc_crop code does not force a model re-download unless _ASSETS changes.
-
-To reclaim disk space from old model versions:
-    rm -rf ~/.cache/sc_crop/v0.0.5   # remove a specific old version
-
-Usage:
-    sc_crop download           # optional pre-download; happens automatically on first use
-    from sc_crop.download import ensure_model, ensure_cls_model
+To reclaim disk space from old versions:
+    rm -rf ~/.cache/sc_crop/v0.0.9
 """
 
 import hashlib
@@ -23,9 +15,6 @@ from pathlib import Path
 _MODEL_TAG = "v0.0.10"
 _BASE_URL = f"https://github.com/ivadomed/sc-crop/releases/download/{_MODEL_TAG}"
 
-# v0.0.10: same trained weights as v0.0.9, but the detector is exported with
-# dynamic axes (rectangular letterbox 320×W) so sc_crop's ONNX preprocessing
-# matches YOLO's predict() bit-exactly. The classifier stays fixed 320×320.
 _ASSETS = {
     "model.onnx": {
         "url": f"{_BASE_URL}/model.onnx",
@@ -34,14 +23,6 @@ _ASSETS = {
     "cls_model.onnx": {
         "url": f"{_BASE_URL}/cls_model.onnx",
         "sha256": "7562251b3d1ee7b6088e7549bca4e901ca52018723b732a96f9cead127559fd4",
-    },
-    "model.pt": {
-        "url": f"{_BASE_URL}/model.pt",
-        "sha256": "ec667d683bf7766305c32346eac14c09079d522bb43d1dd925d7c613a8461417",
-    },
-    "cls_model.pt": {
-        "url": f"{_BASE_URL}/cls_model.pt",
-        "sha256": "6f2c66153904e644835fec5e71342904f11cd527ad9310a0dde54c122b1af482",
     },
 }
 
@@ -86,25 +67,8 @@ def ensure_cls_model() -> Path:
     return _ensure_file("cls_model.onnx")
 
 
-def ensure_pt_model() -> Path:
-    """Return path to model.pt (for GPU batch inference), downloading if needed."""
-    return _ensure_file("model.pt")
-
-
-def ensure_pt_cls_model() -> Path:
-    """Return path to cls_model.pt, downloading if needed."""
-    return _ensure_file("cls_model.pt")
-
-
 def download() -> None:
-    """Pre-download ONNX model files (CPU inference). Optional — auto on first use."""
+    """Pre-download model files. Optional — auto on first use."""
     for name in ("model.onnx", "cls_model.onnx"):
         _ensure_file(name)
-    print(f"sc_crop ONNX models ready in {_CACHE_DIR}")
-
-
-def download_pt() -> None:
-    """Pre-download PyTorch model files (GPU batch inference)."""
-    for name in ("model.pt", "cls_model.pt"):
-        _ensure_file(name)
-    print(f"sc_crop PT models ready in {_CACHE_DIR}")
+    print(f"sc_crop models ready in {_CACHE_DIR}")

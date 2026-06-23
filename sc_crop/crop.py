@@ -50,12 +50,11 @@ Usage:
     bbox = detect("t2.nii.gz", pad_superior=50, pad_inferior=80)
     bbox = detect("t2.nii.gz", pad_si=30)                    # symmetric SI
     bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # symmetric + override
-    bbox = detect("t2.nii.gz", use_onnx=False, device="cuda") # GPU inference (.pt only)
+    bbox = detect("t2.nii.gz", device="cuda")  # GPU inference
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,8 +62,6 @@ import nibabel as nib
 import numpy as np
 from nibabel.orientations import axcodes2ornt, ornt_transform
 from nibabel.processing import resample_to_output
-from PIL import Image as PILImage
-from PIL import ImageDraw
 
 
 # ─── Config ───────────────────────────────────────────────────────────────────
@@ -115,9 +112,6 @@ class BBox3D:
     z1: int
     z2: int
 
-    def as_tuple(self) -> tuple[int, int, int, int, int, int]:
-        return (self.rl1, self.rl2, self.ap1, self.ap2, self.z1, self.z2)
-
     def pad(self,
             left: float, right: float,
             anterior: float, posterior: float,
@@ -147,20 +141,6 @@ class BBox3D:
             z1=max(0,   self.z1  - int(np.ceil(inferior / si_mm))),
             z2=min(Z,   self.z2  + int(np.ceil(superior / si_mm))),
         )
-
-    def to_mm(self, img: nib.Nifti1Image) -> tuple[np.ndarray, np.ndarray]:
-        """Convert to mm space → (corner_mm, sizes_mm).
-
-        Generic over orientation: uses img.affine and zooms[:3]. The bbox indices
-        must be expressed in img's voxel orientation.
-        """
-        a_mm, b_mm, c_mm = [float(v) for v in img.header.get_zooms()[:3]]
-        corner_mm = img.affine[:3, :3] @ np.array([self.rl1, self.ap1, self.z1]) \
-                    + img.affine[:3, 3]
-        sizes_mm = np.array([(self.rl2 - self.rl1) * a_mm,
-                             (self.ap2 - self.ap1) * b_mm,
-                             (self.z2  - self.z1)  * c_mm])
-        return corner_mm, sizes_mm
 
     def crop(self, img: nib.Nifti1Image, translate: bool = True) -> nib.Nifti1Image:
         """Crop a NIfTI. With translate=True, updates affine so the crop sits at the
@@ -208,13 +188,6 @@ def reorient_to_las(img: nib.Nifti1Image) -> nib.Nifti1Image:
     current = nib.io_orientation(img.affine)
     target  = axcodes2ornt(("L", "A", "S"))
     return img.as_reoriented(ornt_transform(current, target))
-
-
-def reorient_to_original(img_las: nib.Nifti1Image,
-                          original_ornt: np.ndarray) -> nib.Nifti1Image:
-    las_ornt  = axcodes2ornt(("L", "A", "S"))
-    transform = ornt_transform(las_ornt, original_ornt)
-    return img_las.as_reoriented(transform)
 
 
 # ─── Resampling ───────────────────────────────────────────────────────────────
@@ -274,21 +247,6 @@ def _volume_percentiles(data: np.ndarray) -> tuple[float, float]:
     return mean - 3 * std, mean + 3 * std
 
 
-def _get_slice(data: np.ndarray, las_idx: int, black: np.ndarray,
-               lo: float | None = None, hi: float | None = None) -> np.ndarray:
-    """Extract one axial slice in (AP, RL) uint8, identical to preprocess.py.
-
-    Convention: data[:, :, las_idx].T[::-1, ::-1]
-      rows = AP (row 0 = Anterior), cols = RL (col 0 = Left).
-    Out-of-bounds las_idx returns a black frame.
-    lo/hi: pre-computed volume percentiles; None = compute per-slice.
-    """
-    Z = data.shape[2]
-    if las_idx < 0 or las_idx >= Z:
-        return black
-    return normalize_to_uint8(data[:, :, las_idx], lo, hi).T[::-1, ::-1]
-
-
 def _normalize_volume(data: np.ndarray, lo: float, hi: float) -> np.ndarray:
     """Normalize entire volume to uint8 in one vectorized pass.
 
@@ -335,7 +293,9 @@ def build_slices(data: np.ndarray, channels: int,
             return normalize_to_uint8(arr, lo, hi)
     else:
         def _get(idx):
-            return _get_slice(data, idx, black)  # per-slice percentiles, foreground only
+            if idx < 0 or idx >= Z:
+                return black
+            return normalize_to_uint8(data[:, :, idx]).T[::-1, ::-1]
 
     slices, las_idxs = [], []
     for las_idx in range(Z - 1, -1, -1):   # Superior → Inferior
@@ -352,12 +312,14 @@ def build_slices(data: np.ndarray, channels: int,
 # ─── YOLO inference ───────────────────────────────────────────────────────────
 
 def infer_slices(model, slices: list, las_idxs: list, conf_thresh: float,
-                 device: str | None = None) -> dict:
+                 device: str | None = None, imgsz: int = 320) -> dict:
     """Run YOLO detection inference on pre-built slices.
 
     Returns {las_idx: (cx, cy, w, h)} in slice-image normalised coords [0,1].
+    imgsz must match training imgsz (read from config.yaml) — required for ONNX
+    models which do not embed imgsz in their metadata unlike .pt.
     """
-    kw = {"conf": conf_thresh, "verbose": False}
+    kw = {"conf": conf_thresh, "imgsz": imgsz, "verbose": False}
     if device:
         kw["device"] = device
     results = model.predict(slices, **kw)
@@ -390,36 +352,46 @@ def _si_connected_components(preds: dict) -> list:
     return comps
 
 
-def _sc_class_idx(cls_model) -> int:
-    for idx, name in cls_model.names.items():
-        if name == "sc":
-            return int(idx)
-    raise ValueError(f"Class 'sc' not found in cls model names: {cls_model.names}")
+_CLS_SC_IDX = 1  # index of "sc" class in classifier output
+
+
+def _letterbox_cls(sl: np.ndarray, imgsz: int) -> np.ndarray:
+    """Square letterbox for the classifier — matches LetterboxClsTransform from training.
+
+    Returns float32 NCHW tensor [1, 3, imgsz, imgsz] ready for onnxruntime.
+    """
+    import cv2
+    rgb = sl if sl.ndim == 3 else np.stack([sl] * 3, axis=2)
+    h, w = rgb.shape[:2]
+    r = imgsz / max(h, w)
+    nh, nw = round(h * r), round(w * r)
+    if (nh, nw) != (h, w):
+        rgb = cv2.resize(rgb, (nw, nh), interpolation=cv2.INTER_LINEAR)
+    ph, pw = imgsz - nh, imgsz - nw
+    padded = cv2.copyMakeBorder(rgb, ph // 2, ph - ph // 2, pw // 2, pw - pw // 2,
+                                cv2.BORDER_CONSTANT, value=(114, 114, 114))
+    return padded.astype(np.float32).transpose(2, 0, 1)[np.newaxis] / 255.0
 
 
 def cls_comp_filter(preds: dict, slices: list, las_idxs: list,
-                    cls_model, cls_conf: float, device: str | None) -> dict:
+                    cls_sess, cls_conf: float, imgsz: int = 320) -> dict:
     """Keep first cls-validated SI component + all preds below it.
 
-    Iterates components from most superior, runs cls in batch per component,
-    stops as soon as one component has ≥1 positive slice (conf ≥ cls_conf).
+    Iterates components from most superior, runs onnxruntime classifier slice by
+    slice, stops as soon as one component has ≥1 positive slice (conf ≥ cls_conf).
     Returns all preds with z ≥ min_z of the validated component.
     Fallback: returns all preds if no component is validated.
     """
-    comps = _si_connected_components(preds)
-    sc_idx = _sc_class_idx(cls_model)
+    comps     = _si_connected_components(preds)
     slice_map = {idx: sl for idx, sl in zip(las_idxs, slices)}
-    predict_kw: dict = {"verbose": False}
-    if device:
-        predict_kw["device"] = device
 
     for comp in comps:
-        batch = [slice_map[z] for z in comp if z in slice_map]
-        if not batch:
-            continue
-        results = cls_model.predict(batch, **predict_kw)
-        if any(float(r.probs.data[sc_idx]) >= cls_conf for r in results):
-            return {z: b for z, b in preds.items() if z >= min(comp)}
+        for z in comp:
+            if z not in slice_map:
+                continue
+            out = cls_sess.run(None, {"images": _letterbox_cls(slice_map[z], imgsz)})[0][0]
+            if float(out[_CLS_SC_IDX]) >= cls_conf:
+                return {z_: b for z_, b in preds.items() if z_ >= min(comp)}
     return preds
 
 
@@ -484,70 +456,6 @@ def aggregate_bbox_3d(preds: dict,
     return BBox3D(min(rl1s), max(rl2s), min(ap1s), max(ap2s), min(zs), max(zs))
 
 
-# ─── Debug panel ──────────────────────────────────────────────────────────────
-
-def save_debug_panel(model, slices: list, las_idxs: list,
-                     conf_thresh: float, out_path: str,
-                     padded_bbox: BBox3D | None = None,
-                     H: int | None = None, W: int | None = None) -> None:
-    """Save a near-square panel of all axial slices with max-confidence bbox.
-
-    Runs inference at conf=0.001 so every slice shows its best prediction.
-    bbox colors:
-        - Green/Orange: YOLO detection (green if conf ≥ conf_thresh, else orange)
-        - Red: 3D crop region boundaries (if padded_bbox provided)
-
-    Slice convention: data[:, :, z].T[::-1,::-1] → row 0 = Anterior, col 0 = Left.
-    """
-    CELL    = 128
-    results = model.predict(slices, conf=0.001, verbose=False)
-    has_pad = padded_bbox is not None and H is not None and W is not None
-    cells   = []
-
-    for las_idx, res, sl in zip(las_idxs, results, slices):
-        rgb  = sl if sl.ndim == 3 else np.stack([sl] * 3, axis=-1)
-        cell = PILImage.fromarray(rgb).resize((CELL, CELL), PILImage.BILINEAR)
-        draw = ImageDraw.Draw(cell)
-
-        # YOLO detection (green/orange)
-        if res.boxes is not None and len(res.boxes) > 0:
-            best         = int(res.boxes.conf.argmax())
-            conf         = float(res.boxes.conf[best])
-            cx, cy, w, h = res.boxes.xywhn[best].tolist()
-            x1, y1 = (cx - w / 2) * CELL, (cy - h / 2) * CELL
-            x2, y2 = (cx + w / 2) * CELL, (cy + h / 2) * CELL
-            color = (0, 220, 0) if conf >= conf_thresh else (255, 140, 0)
-            draw.rectangle([x1, y1, x2, y2], outline=color, width=1)
-            draw.text((2, CELL - 11), f"{conf:.2f}", fill=color)
-
-        # 3D crop region (red), drawn on slices within the padded z-range.
-        # T[::-1,::-1]: col 0 = Left (LAS RL max), row 0 = Anterior (LAS AP max).
-        # LAS rl_vox → image_x = (rl_vox / W) * CELL  (no flip — matches original)
-        # LAS ap_vox → image_y = (1 - ap_vox / H) * CELL
-        if has_pad and padded_bbox.z1 <= las_idx <= padded_bbox.z2:
-            x0 = (padded_bbox.rl1 / W) * CELL
-            x1 = (padded_bbox.rl2 / W) * CELL
-            y0 = (1 - padded_bbox.ap2 / H) * CELL
-            y1 = (1 - padded_bbox.ap1 / H) * CELL
-            draw.rectangle([min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)],
-                           outline=(255, 0, 0), width=2)
-
-        draw.text((2, 1), f"z{las_idx}", fill=(200, 200, 200))
-        cells.append(cell)
-
-    n    = len(cells)
-    cols = math.ceil(math.sqrt(n))
-    rows = math.ceil(n / cols)
-
-    canvas = PILImage.new("RGB", (cols * CELL, rows * CELL), (20, 20, 20))
-    for i, cell in enumerate(cells):
-        r, c = divmod(i, cols)
-        canvas.paste(cell, (c * CELL, r * CELL))
-
-    canvas.save(out_path)
-    print(f"Debug   : {out_path}")
-
-
 # ─── I/O helpers ──────────────────────────────────────────────────────────────
 
 def _stem(input_path: str) -> tuple[Path, str]:
@@ -602,10 +510,7 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
            regularization: str | None = None,
            cls_conf: float | None = None,
            device: str | None = None,
-           use_onnx: bool = True,
-           norm_scope: str | None = None,
-           debug: bool = False,
-           time_steps: bool = False) -> dict:
+           norm_scope: str | None = None) -> dict:
     """Detect the spinal cord bounding box. Pure — no files written.
 
     This is the primary entry point for inference pipelines. Call once, then
@@ -628,12 +533,8 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
         conf:           Detection confidence threshold (default: from config.yaml).
         regularization: "cls" (default), "graphtrim", or "none".
         cls_conf:       CLS classifier confidence threshold (default: 0.5).
-        device:         "cpu", "cuda", "mps" — only used when use_onnx=False.
-        use_onnx:       True (default) — ONNX Runtime inference (CPU, no ultralytics).
-                        False — PyTorch .pt inference (supports --device cuda/mps).
+        device:         "cpu", "cuda", "mps" — passed to ultralytics YOLO.predict().
         norm_scope:     "volume" (default), "slice_all", or "slice" — normalisation scope.
-        debug:          Save debug panel PNG (requires ultralytics).
-        time_steps:     Print elapsed time for each pipeline step.
 
     Returns:
         bbox dict with:
@@ -655,19 +556,6 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
         bbox = detect("t2.nii.gz", pad_si=30)                    # symmetric SI
         bbox = detect("t2.nii.gz", pad_si=30, pad_inferior=60)   # symmetric + override
     """
-    import time as _time
-
-    def _tick(label: str, t0: float) -> float:
-        t1 = _time.perf_counter()
-        if time_steps:
-            print(f"  [{label}] {t1 - t0:.2f}s")
-        return t1
-
-    from .download import ensure_model
-
-    t0 = _time.perf_counter()
-
-    model_path = Path(model_path) if model_path else ensure_model()
     config     = config if config is not None else load_config()
     si_res        = config["si_res"]
     inplane_res   = config.get("inplane_res")
@@ -676,6 +564,7 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
     regularization = regularization if regularization is not None else config.get("regularization", "cls")
     cls_conf      = cls_conf       if cls_conf       is not None else config.get("cls_conf", 0.5)
     norm_scope    = norm_scope     if norm_scope      is not None else config.get("norm_scope", "volume")
+    imgsz         = config.get("imgsz", 320)
 
     pad_left, pad_right, pad_anterior, pad_posterior, pad_superior, pad_inferior = _resolve_padding(
         pad_si=pad_si, pad_superior=pad_superior, pad_inferior=pad_inferior,
@@ -698,69 +587,32 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
     shape            = img_las.shape
 
     print(f"Input   : {img_name}  shape={img.shape}  ornt={original_axcodes}")
-    t0 = _tick("load + reorient", t0)
 
-    if use_onnx:
-        from .infer_onnx import load_session, infer_slices_onnx, cls_comp_filter_onnx
-        from .download import ensure_cls_model
-        det_sess = load_session(model_path)
-        cls_sess = load_session(ensure_cls_model()) if regularization == "cls" else None
-        if debug:
-            from ultralytics import YOLO
-            det_pt = YOLO(str(model_path))
-    else:
-        from .download import ensure_cls_model
-        from ultralytics import YOLO
-        predict_kw: dict = {"verbose": False}
-        if device:
-            predict_kw["device"] = device
-        det_pt    = YOLO(str(model_path))
-        cls_model = YOLO(str(ensure_cls_model())) if regularization == "cls" else None
-    t0 = _tick("load model", t0)
+    from .download import ensure_cls_model, ensure_model
+    from ultralytics import YOLO
+    import onnxruntime as ort
+    model_file = Path(model_path) if model_path else ensure_model()
+    det_model = YOLO(str(model_file))
+    cls_sess  = ort.InferenceSession(str(ensure_cls_model())) if regularization == "cls" else None
 
     si_zoom  = zooms[2] / si_res
     img_inf  = resample_for_inference(img_las, si_res, inplane_res)
     data_inf = img_inf.get_fdata(dtype=np.float32)
-    t0 = _tick("resample", t0)
 
     slices, las_idxs = build_slices(data_inf, channels, norm_scope)
-    t0 = _tick("build slices", t0)
 
-    if use_onnx:
-        preds = infer_slices_onnx(det_sess, slices, las_idxs, conf)
-    else:
-        preds = infer_slices(det_pt, slices, las_idxs, conf, device)
+    preds = infer_slices(det_model, slices, las_idxs, conf, device, imgsz)
     print(f"Detected: {len(preds)}/{data_inf.shape[2]} slices")
-    t0 = _tick("inference", t0)
 
     if regularization == "cls":
-        if use_onnx and cls_sess is not None:
-            preds = cls_comp_filter_onnx(preds, slices, las_idxs, cls_sess, cls_conf)
-        elif not use_onnx and cls_model is not None:
-            preds = cls_comp_filter(preds, slices, las_idxs, cls_model, cls_conf, device)
+        preds = cls_comp_filter(preds, slices, las_idxs, cls_sess, cls_conf, imgsz)
         print(f"Cls reg : {len(preds)} slices kept (conf≥{cls_conf})")
-        t0 = _tick("cls regularization", t0)
     elif regularization == "graphtrim":
         inf_zooms = tuple(float(v) for v in img_inf.header.get_zooms()[:3])
         H_inf, W_inf = data_inf.shape[1], data_inf.shape[0]
         preds = graphtrim_superior_filter(preds, H_inf, W_inf,
                                           inf_zooms[1], inf_zooms[0], inf_zooms[2])
         print(f"Graphtrim: {len(preds)} slices kept")
-        t0 = _tick("graphtrim regularization", t0)
-
-    if debug:
-        parent, stem = _stem(img_path)
-        bbox_pad_for_debug = None
-        if preds:
-            bbox_for_debug     = aggregate_bbox_3d(preds, shape[0], shape[1], shape[2], si_zoom)
-            bbox_pad_for_debug = bbox_for_debug.pad(
-                pad_left, pad_right, pad_anterior, pad_posterior,
-                pad_superior, pad_inferior, zooms, shape,
-            )
-        save_debug_panel(det_pt, slices, las_idxs, conf,
-                         str(parent / f"{stem}_debug.png"),
-                         padded_bbox=bbox_pad_for_debug, H=shape[1], W=shape[0])
-        t0 = _tick("debug panel", t0)
 
     if not preds:
         raise RuntimeError("No spinal cord detected — check the volume or lower --conf")
@@ -769,7 +621,6 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
     bbox_pad      = bbox.pad(pad_left, pad_right, pad_anterior, pad_posterior,
                              pad_superior, pad_inferior, zooms, shape)
     bbox_pad_orig, _ = bbox_pad.reorient(shape, las_ornt, original_ornt)
-    t0 = _tick("bbox aggregation", t0)
 
     xmin, xmax = bbox_pad_orig.rl1, bbox_pad_orig.rl2 - 1
     ymin, ymax = bbox_pad_orig.ap1, bbox_pad_orig.ap2 - 1
@@ -829,10 +680,6 @@ def crop(img: "str | Path | nib.Nifti1Image", bbox: dict,
     if translate:
         affine[:3, 3] = (img.affine @ np.array([xmin, ymin, zmin, 1.0]))[:3]
     return nib.Nifti1Image(data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], affine, img.header)
-
-
-# backward-compatible alias
-crop_nifti = crop
 
 
 def detect_and_crop(img_path, **kwargs) -> tuple:
