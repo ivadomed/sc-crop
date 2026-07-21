@@ -4,10 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name        = "sc-crop"
-version     = "0.7.1"
+version     = "0.7.2"
 description = "Spinal cord detection and volume cropping"
 readme      = "README.md"
 requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
 dependencies = [
     "nibabel>=5.0.0",
     "numpy>=1.24.0",
@@ -20,6 +26,11 @@ dependencies = [
 
 [project.optional-dependencies]
 segment = ["nnunet-onnx"]
+
+[project.urls]
+Homepage   = "https://github.com/ivadomed/sc-crop"
+Repository = "https://github.com/ivadomed/sc-crop"
+Issues     = "https://github.com/ivadomed/sc-crop/issues"
 
 [project.scripts]
 sc_crop         = "sc_crop.cli:main"
