@@ -270,38 +270,20 @@ nnUNetv2_train 001 3d_fullres 0
 
 **Step 3 — Inference on a new image**
 
-The simplest approach uses the built-in `segment_onnx` / `segment_pt` functions (or their CLI equivalents) which handle detect → crop → infer → uncrop in one call. Install [nnunet-onnx](https://github.com/quentinRevillon/nnunet-onnx) for the inference backend:
+Same detect → crop → infer → uncrop pattern as any other model — see [`examples/infer_with_sc_crop.py`](examples/infer_with_sc_crop.py) for a full runnable template:
 
-```bash
-pip install "nnunet-onnx @ git+https://github.com/quentinRevillon/nnunet-onnx.git" torch nnunetv2 onnxscript onnx
-```
-
-**Via CLI:**
-```bash
-# PyTorch checkpoint
-sc-segment-pt -i new_subject.nii.gz -o seg.nii.gz \
-    --checkpoint /path/to/fold_0/checkpoint_best.pth
-
-# ONNX model (no nnunetv2 needed at runtime)
-sc-segment-onnx -i new_subject.nii.gz -o seg.nii.gz \
-    --model /path/to/model.onnx
-```
-
-**Via Python API:**
 ```python
-from sc_crop import segment_pt, segment_onnx
+from sc_crop import detect, crop, uncrop
 import nibabel as nib
 
-seg = segment_pt("new_subject.nii.gz", "/path/to/fold_0/checkpoint_best.pth")
-seg = segment_onnx("new_subject.nii.gz", "/path/to/model.onnx")
-nib.save(seg, "seg.nii.gz")
-```
+img  = nib.load("new_subject.nii.gz")
+bbox = detect(img, **PAD)              # same padding as Step 1
+crop_img = crop(img, bbox)
 
-To convert a checkpoint to ONNX (plans are embedded in the file — no external json needed):
-```bash
-python -m nnunet_onnx.export \
-    --checkpoint /path/to/fold_0/checkpoint_best.pth \
-    --output model.onnx
+seg_crop = my_nnunet_predictor(crop_img)   # run your trained nnUNet model
+
+seg = uncrop(seg_crop, bbox)
+nib.save(seg, "seg.nii.gz")
 ```
 
 ---
@@ -346,8 +328,6 @@ Replace `fake_sc_segmentation()` with your own model to use in production.
 ## Requirements
 
 Python ≥ 3.8. Dependencies installed automatically: `nibabel`, `numpy`, `onnxruntime`, `pillow`, `pyyaml`, `scipy`, `ultralytics` (includes `opencv`).
-
-Optional: `nnunet-onnx` for the `segment_onnx` / `segment_pt` functions — install with `pip install "sc-crop[segment]"`.
 
 ---
 
