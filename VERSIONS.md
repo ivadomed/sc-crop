@@ -6,6 +6,7 @@ Ce fichier documente le lien entre la version du **package sc-crop**, la version
 
 | Package | Modèle  | Run d'entraînement                                   | Commit training repo                     |
 |---------|---------|------------------------------------------------------|------------------------------------------|
+| v0.8.1 | v0.0.10 | *(fix packaging uniquement — même modèle que v0.4.1 : copyright LICENSE corrigé en NeuroPoly Lab)* | — |
 | v0.8.0 | v0.0.10 | *(même modèle que v0.4.1 — breaking change package : retrait `segment_onnx`/`segment_pt`/`sc-crop[segment]`, ajout licence MIT, voir [CHANGELOG.md](CHANGELOG.md))* | — |
 | v0.7.2 | v0.0.10 | *(fix packaging uniquement — même modèle que v0.4.1 : `project.urls`, `classifiers`, script `publish_release.sh`)* | — |
 | v0.7.1 | v0.0.10 | *(fix packaging uniquement — même modèle que v0.4.1 : ajout `readme` PyPI, suppression des poids `.pt`/`.onnx` embarqués par erreur dans le sdist v0.7.0)* | — |

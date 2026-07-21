@@ -4,6 +4,10 @@ Notable changes to the `sc-crop` **package** (API, CLI, behavior). For which det
 ships with which package version, see [VERSIONS.md](VERSIONS.md) — this file does not repeat
 that mapping. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.1] — 2026-07-21
+### Fixed
+- `LICENSE` copyright holder corrected to NeuroPoly Lab, Polytechnique Montréal.
+
 ## [0.8.0] — 2026-07-21
 
 ### Removed (breaking)
