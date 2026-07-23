@@ -27,6 +27,6 @@ from .crop import crop, detect, detect_and_crop, load_config, uncrop
 from .qc import check_label_crop, CropReport, save_bbox_nifti, check_seg_truncation
 from .download import download, ensure_model, ensure_cls_model, _MODEL_TAG
 
-__version__       = "0.8.1"
+__version__       = "0.9.0"
 __model_version__ = _MODEL_TAG
 MODEL_VERSION     = _MODEL_TAG

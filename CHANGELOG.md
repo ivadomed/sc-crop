@@ -4,6 +4,16 @@ Notable changes to the `sc-crop` **package** (API, CLI, behavior). For which det
 ships with which package version, see [VERSIONS.md](VERSIONS.md) — this file does not repeat
 that mapping. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.0] — 2026-07-23
+
+### Changed (breaking)
+- `check_seg_truncation()` now returns `bbox` key strings (e.g. `["zmax", "zmin"]`) instead of
+  `pad_*` anatomical face names (e.g. `["pad_superior", "pad_inferior"]`). The old return values
+  weren't valid keys into the `bbox` dict returned by `detect()` (only `xmin`/`xmax`/etc. are),
+  so `bbox[face]` on the old output always raised `KeyError` — this was never usable as
+  documented. The new keys are directly usable as `bbox[key]`, and map 1:1 to the `-box-*` CLI
+  arguments in SCT's `sct_deepseg`.
+
 ## [0.8.1] — 2026-07-21
 ### Fixed
 - `LICENSE` copyright holder corrected to NeuroPoly Lab, Polytechnique Montréal.

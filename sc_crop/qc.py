@@ -4,7 +4,7 @@ Quality-control helpers for sc_crop detection-based cropping.
 Public API:
     check_label_crop(label, bbox)         → dict       — check that no SC voxels are lost after crop
     save_bbox_nifti(bbox, ref_nii, path)  → None       — save the crop box as a binary NIfTI mask
-    check_seg_truncation(seg_nii, bbox)   → list[str]  — pad_* face names where seg touches crop boundary
+    check_seg_truncation(seg_nii, bbox)   → list[str]  — bbox keys (e.g. "zmax") where seg touches crop boundary
     CropReport                                          — accumulate and save per-volume QC results
 """
 
@@ -52,16 +52,16 @@ def check_seg_truncation(seg_nii: nib.Nifti1Image, bbox: dict) -> list:
     """Check if a segmentation touches the crop box boundary (truncation detection).
 
     A segmentation voxel on an interior crop face means the structure likely continues
-    beyond the box. Uses ``bbox["original_axcodes"]`` to map axes to anatomical faces —
-    no separate orientation parameter needed.
+    beyond the box.
 
     Args:
         seg_nii: segmentation NIfTI in full original image space (after uncrop).
         bbox:    context dict returned by detect().
 
     Returns:
-        List of ``pad_*`` face name strings (e.g. ``["pad_superior", "pad_inferior"]``)
-        for each interior face where the segmentation touches the crop boundary.
+        List of bbox key strings (e.g. ``["zmax", "zmin"]``) for each interior face
+        where the segmentation touches the crop boundary. The keys map directly to
+        ``bbox["zmax"]`` etc. and to the ``-box-*`` CLI arguments in sct_deepseg.
         Empty list means no truncation detected.
 
     Example::
@@ -69,30 +69,28 @@ def check_seg_truncation(seg_nii: nib.Nifti1Image, bbox: dict) -> list:
         from sc_crop import detect, check_seg_truncation
         import nibabel as nib
 
-        bbox     = detect("t2.nii.gz")
-        seg_nii  = nib.load("t2_seg.nii.gz")  # in full (uncropped) space
+        bbox      = detect("t2.nii.gz")
+        seg_nii   = nib.load("t2_seg.nii.gz")  # in full (uncropped) space
         truncated = check_seg_truncation(seg_nii, bbox)
+        # e.g. ["zmax", "zmin"] — use bbox[key] to get the current voxel index
         if truncated:
-            print("Truncated on:", truncated)
+            print("Truncated at:", {k: bbox[k] for k in truncated})
     """
     seg_data = np.asanyarray(seg_nii.dataobj)
-    shape = seg_data.shape
-    axcodes = bbox["original_axcodes"]
+    shape    = seg_data.shape
     truncated = []
-    for ax, lo, hi in [(0, bbox["xmin"], bbox["xmax"]),
-                       (1, bbox["ymin"], bbox["ymax"]),
-                       (2, bbox["zmin"], bbox["zmax"])]:
-        face_lo, face_hi = _FACE_MAP[axcodes[ax]]
+    for ax, (lo_key, hi_key) in enumerate([("xmin", "xmax"), ("ymin", "ymax"), ("zmin", "zmax")]):
+        lo, hi = bbox[lo_key], bbox[hi_key]
         if hi < shape[ax] - 1:
             sl = [slice(None)] * 3
             sl[ax] = hi
             if np.any(seg_data[tuple(sl)]):
-                truncated.append(face_hi)
+                truncated.append(hi_key)
         if lo > 0:
             sl = [slice(None)] * 3
             sl[ax] = lo
             if np.any(seg_data[tuple(sl)]):
-                truncated.append(face_lo)
+                truncated.append(lo_key)
     return truncated
 
 
