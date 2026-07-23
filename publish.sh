@@ -2,10 +2,10 @@
 # Publish sc-crop to PyPI.
 #
 # Usage:
-#   TWINE_TOKEN=pypi-xxx bash publish.sh
+#   bash publish.sh
 #
-# The token is read from the TWINE_TOKEN environment variable — never pass it
-# as a positional argument or store it in this file.
+# Credentials are read from ~/.pypirc (section [pypi], username=__token__),
+# same as twine does by default -- nothing to pass on the command line.
 
 set -euo pipefail
 
@@ -40,11 +40,11 @@ python -m build --outdir "$REPO_DIR/dist" "$CLEAN_SRC"
 twine check dist/*
 
 # ── upload ───────────────────────────────────────────────────────────────────
-if [[ -z "${TWINE_TOKEN:-}" ]]; then
-    echo "ERROR: TWINE_TOKEN is not set. Run: TWINE_TOKEN=pypi-xxx bash publish.sh"
+if [[ ! -f "$HOME/.pypirc" ]] || ! grep -q '^\[pypi\]' "$HOME/.pypirc"; then
+    echo "ERROR: ~/.pypirc with a [pypi] section is required (username=__token__, password=<your PyPI token>)."
     exit 1
 fi
 
-TWINE_USERNAME=__token__ TWINE_PASSWORD="$TWINE_TOKEN" twine upload dist/*
+twine upload dist/*
 
 echo "Done — sc-crop v${TOML_VERSION} published."
