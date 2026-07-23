@@ -286,6 +286,22 @@ seg = uncrop(seg_crop, bbox)
 nib.save(seg, "seg.nii.gz")
 ```
 
+### SpinalCordToolbox (SCT) integration
+
+If you're releasing a model for use with SCT's `sct_deepseg`, it needs a `crop_metadata.yaml`
+at the root of your release `.zip`, so SCT knows to run the sc-crop pipeline (and with which
+padding) for that specific model — this travels with the model artifact itself rather than
+being hardcoded in SCT's own source. Generate it with the padding values you used to build your
+training crops:
+
+```bash
+python examples/write_sct_crop_metadata.py \
+    --pad-superior 40 --pad-inferior 100 --pad-left 15 --pad-right 15 --pad-anterior 15 --pad-posterior 22
+```
+
+Then include the resulting `crop_metadata.yaml` at the root of your release zip (alongside every
+mirror/fold zip, if the model has more than one).
+
 ---
 
 ## Examples
