@@ -4,6 +4,14 @@ Notable changes to the `sc-crop` **package** (API, CLI, behavior). For which det
 ships with which package version, see [VERSIONS.md](VERSIONS.md) — this file does not repeat
 that mapping. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.11.0] — 2026-07-28
+
+### Changed (breaking)
+- `write_crop_metadata()` now writes JSON (`crop_metadata.json`) instead of YAML
+  (`crop_metadata.yaml`), and the `sc_crop write-metadata` CLI's default `-o/--output` changed
+  to match. JSON needs no extra dependency to read on the consumer side (SCT already ships
+  `json` in the standard library, whereas `crop_metadata.yaml` required `pyyaml`).
+
 ## [0.10.0] — 2026-07-27
 
 ### Added

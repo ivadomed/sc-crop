@@ -17,7 +17,7 @@ Three modes, selected automatically from the arguments:
   Download models:
     sc_crop download
 
-  Write crop_metadata.yaml for a model release (e.g. for SCT's sct_deepseg):
+  Write crop_metadata.json for a model release (e.g. for SCT's sct_deepseg):
     sc_crop write-metadata --pad-superior 40 --pad-inferior 100 --pad-left 15 --pad-right 15 --pad-anterior 15 --pad-posterior 22
 """
 

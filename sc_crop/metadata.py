@@ -1,5 +1,5 @@
 """
-`crop_metadata.yaml` — the padding contract a model release hands to a downstream consumer
+`crop_metadata.json` — the padding contract a model release hands to a downstream consumer
 (e.g. SpinalCordToolbox's `sct_deepseg`) so it can reproduce, at inference time, the exact
 cropping used to build the training data.
 
@@ -10,11 +10,10 @@ values (and the recorded `sc_crop` version) can't drift from what was actually u
     pad_kwargs = dict(pad_superior=40, pad_inferior=100, pad_left=15,
                       pad_right=15, pad_anterior=15, pad_posterior=22)
     bbox = sc_crop.detect(img, **pad_kwargs)
-    sc_crop.write_crop_metadata("crop_metadata.yaml", **pad_kwargs)
+    sc_crop.write_crop_metadata("crop_metadata.json", **pad_kwargs)
 """
 import argparse
-
-import yaml
+import json
 
 PAD_FACES = ("superior", "inferior", "left", "right", "anterior", "posterior")
 CROP_PAD_KEYS = tuple(f"pad_{face}" for face in PAD_FACES)
@@ -22,10 +21,10 @@ CROP_PAD_KEYS = tuple(f"pad_{face}" for face in PAD_FACES)
 
 def write_crop_metadata(path, *, pad_superior, pad_inferior, pad_left, pad_right, pad_anterior, pad_posterior):
     """
-    Write a `crop_metadata.yaml` recording the padding (mm) used to build training crops, plus
+    Write a `crop_metadata.json` recording the padding (mm) used to build training crops, plus
     the `sc_crop` version active at the time of writing.
 
-    :param path: str: Output path (conventionally `crop_metadata.yaml`, at the root of the
+    :param path: str: Output path (conventionally `crop_metadata.json`, at the root of the
         model's release .zip -- include the same file, unmodified, in every mirror/fold zip
         that makes up the release).
     :param pad_superior: float: Padding (mm) on the superior face.
@@ -47,16 +46,16 @@ def write_crop_metadata(path, *, pad_superior, pad_inferior, pad_left, pad_right
         "pad_posterior": pad_posterior,
     }
     with open(path, "w") as fp:
-        yaml.safe_dump(metadata, fp, sort_keys=False)
+        json.dump(metadata, fp, indent=2)
 
 
 def _write_metadata_cli(argv):
     """CLI entry point for the `sc_crop write-metadata` subcommand."""
     parser = argparse.ArgumentParser(
         prog="sc_crop write-metadata",
-        description="Write a crop_metadata.yaml for a model release consumed by SpinalCordToolbox (SCT).",
+        description="Write a crop_metadata.json for a model release consumed by SpinalCordToolbox (SCT).",
     )
-    parser.add_argument("-o", "--output", default="crop_metadata.yaml")
+    parser.add_argument("-o", "--output", default="crop_metadata.json")
     for face in PAD_FACES:
         parser.add_argument(f"--pad-{face}", type=float, required=True, dest=f"pad_{face}",
                             help=f"Padding (mm) used at training time for the {face} face.")

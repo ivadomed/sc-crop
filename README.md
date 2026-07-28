@@ -288,7 +288,7 @@ nib.save(seg, "seg.nii.gz")
 
 ### SpinalCordToolbox (SCT) integration
 
-If you're releasing a model for use with SCT's `sct_deepseg`, it needs a `crop_metadata.yaml`
+If you're releasing a model for use with SCT's `sct_deepseg`, it needs a `crop_metadata.json`
 at the root of your release `.zip`, so SCT knows to run the sc-crop pipeline (and with which
 padding) for that specific model — this travels with the model artifact itself rather than
 being hardcoded in SCT's own source.
@@ -301,7 +301,7 @@ the *same* padding kwargs passed to both — this way the recorded values (and t
 pad_kwargs = dict(pad_superior=40, pad_inferior=100, pad_left=15,
                   pad_right=15, pad_anterior=15, pad_posterior=22)
 bbox = sc_crop.detect(img, **pad_kwargs)
-sc_crop.write_crop_metadata("crop_metadata.yaml", **pad_kwargs)
+sc_crop.write_crop_metadata("crop_metadata.json", **pad_kwargs)
 ```
 
 Or, from the command line, after the fact (`pip install sc-crop` is enough, no need to clone):
@@ -311,7 +311,7 @@ sc_crop write-metadata \
     --pad-superior 40 --pad-inferior 100 --pad-left 15 --pad-right 15 --pad-anterior 15 --pad-posterior 22
 ```
 
-Then include the resulting `crop_metadata.yaml` at the root of your release zip (alongside every
+Then include the resulting `crop_metadata.json` at the root of your release zip (alongside every
 mirror/fold zip, if the model has more than one).
 
 ---
