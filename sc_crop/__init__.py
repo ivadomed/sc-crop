@@ -17,6 +17,11 @@ Quality control:
     check_seg_truncation(seg_nii, bbox)  → list[str]
     CropReport                           — accumulate and save per-volume QC
 
+Release metadata:
+    write_crop_metadata(path, **pad_kwargs) → None — write crop_metadata.yaml for a model
+        release (e.g. for SpinalCordToolbox's `sct_deepseg`); also available as the
+        `sc_crop write-metadata` CLI subcommand.
+
 Version constants:
     __version__       → sc-crop package version
     __model_version__ → detection model version
@@ -26,7 +31,8 @@ Version constants:
 from .crop import crop, detect, detect_and_crop, load_config, uncrop
 from .qc import check_label_crop, CropReport, save_bbox_nifti, check_seg_truncation
 from .download import download, ensure_model, ensure_cls_model, _MODEL_TAG
+from .metadata import write_crop_metadata
 
-__version__       = "0.9.0"
+__version__       = "0.10.0"
 __model_version__ = _MODEL_TAG
 MODEL_VERSION     = _MODEL_TAG

@@ -16,6 +16,9 @@ Three modes, selected automatically from the arguments:
 
   Download models:
     sc_crop download
+
+  Write crop_metadata.yaml for a model release (e.g. for SCT's sct_deepseg):
+    sc_crop write-metadata --pad-superior 40 --pad-inferior 100 --pad-left 15 --pad-right 15 --pad-anterior 15 --pad-posterior 22
 """
 
 import argparse
@@ -27,6 +30,7 @@ import numpy as np
 
 from .crop import detect, crop, _read_bbox_txt, _write_bbox_txt, _stem, _warn_overwrite, BBox3D
 from .download import download
+from .metadata import _write_metadata_cli
 from .qc import save_bbox_nifti
 
 GREEN, RESET = "\033[32m", "\033[0m"
@@ -57,6 +61,10 @@ def _crop_from_coords(input_path, xmin, xmax, ymin, ymax, zmin, zmax,
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "download":
         download()
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "write-metadata":
+        _write_metadata_cli(sys.argv[2:])
         return
 
     parser = argparse.ArgumentParser(

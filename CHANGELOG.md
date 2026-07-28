@@ -4,6 +4,18 @@ Notable changes to the `sc-crop` **package** (API, CLI, behavior). For which det
 ships with which package version, see [VERSIONS.md](VERSIONS.md) — this file does not repeat
 that mapping. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.0] — 2026-07-27
+
+### Added
+- `write_crop_metadata()` and the `sc_crop write-metadata` CLI subcommand, to generate a
+  `crop_metadata.yaml` for a model release (e.g. for SCT's `sct_deepseg`) without cloning the
+  repo. Replaces `examples/write_sct_crop_metadata.py`, which is removed.
+
+### Changed
+- `crop_metadata.yaml` no longer includes a `cropped_image` key. A release only ever bundles
+  this file for a model that actually uses sc-crop, so the file's presence is already the
+  signal — the key was redundant and consumers (SCT) never enforced it as authoritative.
+
 ## [0.9.0] — 2026-07-23
 
 ### Changed (breaking)

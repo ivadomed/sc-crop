@@ -291,11 +291,23 @@ nib.save(seg, "seg.nii.gz")
 If you're releasing a model for use with SCT's `sct_deepseg`, it needs a `crop_metadata.yaml`
 at the root of your release `.zip`, so SCT knows to run the sc-crop pipeline (and with which
 padding) for that specific model — this travels with the model artifact itself rather than
-being hardcoded in SCT's own source. Generate it with the padding values you used to build your
-training crops:
+being hardcoded in SCT's own source.
+
+Call `write_crop_metadata()` right where you call `detect()` to build your training crops, with
+the *same* padding kwargs passed to both — this way the recorded values (and the recorded
+`sc_crop` version) can't drift from what was actually used:
+
+```python
+pad_kwargs = dict(pad_superior=40, pad_inferior=100, pad_left=15,
+                  pad_right=15, pad_anterior=15, pad_posterior=22)
+bbox = sc_crop.detect(img, **pad_kwargs)
+sc_crop.write_crop_metadata("crop_metadata.yaml", **pad_kwargs)
+```
+
+Or, from the command line, after the fact (`pip install sc-crop` is enough, no need to clone):
 
 ```bash
-python examples/write_sct_crop_metadata.py \
+sc_crop write-metadata \
     --pad-superior 40 --pad-inferior 100 --pad-left 15 --pad-right 15 --pad-anterior 15 --pad-posterior 22
 ```
 
