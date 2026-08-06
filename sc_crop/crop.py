@@ -24,13 +24,13 @@ Regularization (--regularization):
                        SI edges; discards slices above the first broken edge.
   none:                no regularization, raw detection output.
 
-Normalisation (--norm-scope):
-  volume (default): mean±3σ on non-zero voxels of the resampled volume, applied to
-                    every slice in a single vectorized pass.
-  slice_all:        percentile 0.5/99.5 per slice on ALL voxels (background included).
-                    Matches preprocess.py norm_scope=slice_all — use when config.yaml
-                    reports norm_scope=slice_all.
-  slice:            percentile 0.5/99.5 per slice on foreground voxels only (legacy).
+Normalisation (--norm-scope) — no default is hardcoded here; the value always comes
+from config.yaml unless explicitly overridden, so it always matches training:
+  volume:     percentile 0.5/99.5 over every voxel of the whole resampled volume,
+              computed once, applied to every slice.
+  slice_all:  percentile 0.5/99.5 per slice on ALL voxels (background included).
+  slice:      percentile 0.5/99.5 per slice on foreground voxels only.
+  Each must match preprocess.py's norm_scope of the same name exactly (training repo).
 
 Padding API (9 parameters, priority: individual > symmetric > default):
   Individual (per face):  pad_superior, pad_inferior, pad_left, pad_right, pad_anterior, pad_posterior
@@ -234,17 +234,12 @@ def normalize_to_uint8(arr: np.ndarray,
 
 
 def _volume_percentiles(data: np.ndarray) -> tuple[float, float]:
-    """nnUNet ZScoreNormalization equivalent: mean/std on non-zero voxels, lo/hi = [mean-3σ, mean+3σ].
-
-    The mask (non-zero voxels) is derived from the image itself — no ground truth needed.
-    This matches nnUNet's use_mask_for_norm=True path where seg=-1 marks background (zero) voxels.
+    """Percentile 0.5/99.5 over every voxel of the whole volume (background included),
+    computed once. Must match preprocess.py norm_scope="volume" exactly — see
+    process_pair() in that file (training repo). Do not change without updating that too.
     """
-    mask = data != 0
-    if not mask.any():
-        return 0.0, 1.0
-    mean = float(data[mask].mean())
-    std  = max(float(data[mask].std()), 1e-8)
-    return mean - 3 * std, mean + 3 * std
+    lo, hi = np.percentile(data, [0.5, 99.5])
+    return float(lo), float(hi)
 
 
 def _normalize_volume(data: np.ndarray, lo: float, hi: float) -> np.ndarray:
@@ -258,16 +253,18 @@ def _normalize_volume(data: np.ndarray, lo: float, hi: float) -> np.ndarray:
     return ((np.clip(data, lo, hi) - lo) / (hi - lo) * 255).astype(np.uint8)
 
 
-def build_slices(data: np.ndarray, channels: int,
-                 norm_scope: str = "volume") -> tuple[list, list]:
+def build_slices(data: np.ndarray, channels: int, norm_scope: str) -> tuple[list, list]:
     """Build all axial slices Superior→Inferior, matching preprocess.py convention.
 
-    norm_scope: "volume"    — percentiles computed once on non-zero voxels (mean±3σ),
-                              volume normalized in a single vectorized pass (~2× faster).
-                "slice_all" — percentile 0.5/99.5 per slice on ALL voxels (background
-                              included). Matches preprocess.py norm_scope=slice_all.
-                "slice"     — percentile 0.5/99.5 per slice on foreground voxels only
-                              (>0 for MRI, >-200 for CT).
+    norm_scope must be one of the 3 values below — nothing else is implemented, and
+    any other string raises rather than silently picking one of these:
+      "volume"    — percentile 0.5/99.5 over every voxel of the whole volume, computed
+                    once, volume normalized in a single vectorized pass (~2× faster).
+      "slice_all" — percentile 0.5/99.5 per slice on ALL voxels (background included).
+      "slice"     — percentile 0.5/99.5 per slice on foreground voxels only
+                    (>0 for MRI, >-200 for CT).
+    Each must match preprocess.py's norm_scope of the same name exactly (training repo).
+
     3ch: R=Superior neighbour (las_idx+1), G=current, B=Inferior neighbour (las_idx-1).
     Border channels are black (zeros).
 
@@ -291,11 +288,13 @@ def build_slices(data: np.ndarray, channels: int,
             arr = data[:, :, idx].T[::-1, ::-1]
             lo, hi = np.percentile(arr, [0.5, 99.5])
             return normalize_to_uint8(arr, lo, hi)
-    else:
+    elif norm_scope == "slice":
         def _get(idx):
             if idx < 0 or idx >= Z:
                 return black
             return normalize_to_uint8(data[:, :, idx]).T[::-1, ::-1]
+    else:
+        raise ValueError(f"unsupported norm_scope: {norm_scope!r} (expected volume, slice_all, or slice)")
 
     slices, las_idxs = [], []
     for las_idx in range(Z - 1, -1, -1):   # Superior → Inferior
@@ -534,7 +533,8 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
         regularization: "cls" (default), "graphtrim", or "none".
         cls_conf:       CLS classifier confidence threshold (default: 0.5).
         device:         "cpu", "cuda", "mps" — passed to ultralytics YOLO.predict().
-        norm_scope:     "volume" (default), "slice_all", or "slice" — normalisation scope.
+        norm_scope:     "volume", "slice_all", or "slice" (default: from config.yaml —
+                        must match training, see build_slices() for what each computes).
 
     Returns:
         bbox dict with:
@@ -563,7 +563,12 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
     conf          = conf           if conf           is not None else config.get("conf", 0.1)
     regularization = regularization if regularization is not None else config.get("regularization", "cls")
     cls_conf      = cls_conf       if cls_conf       is not None else config.get("cls_conf", 0.5)
-    norm_scope    = norm_scope     if norm_scope      is not None else config.get("norm_scope", "volume")
+    # Must match the normalisation the shipped detector was trained with — an explicit
+    # kwarg/CLI flag can still override it, but the silent default always defers to
+    # config.yaml, never to a value hardcoded here.
+    norm_scope = norm_scope if norm_scope is not None else config["norm_scope"]
+    assert norm_scope in ("volume", "slice_all", "slice"), \
+        f"unsupported norm_scope: {norm_scope!r} (expected volume, slice_all, or slice)"
     imgsz         = config.get("imgsz", 320)
 
     pad_left, pad_right, pad_anterior, pad_posterior, pad_superior, pad_inferior = _resolve_padding(

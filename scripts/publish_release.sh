@@ -244,30 +244,18 @@ info "Tag v${PACKAGE_VERSION} poussé sur $(git -C "${SCCROP_REPO}" remote get-u
 
 
 # ════════════════════════════════════════════════════════════
-# PHASE 7 — PUBLICATION PyPI (twine)
+# PHASE 7 — PUBLICATION PyPI (délègue à publish.sh)
 # ════════════════════════════════════════════════════════════
+# publish.sh build depuis un `git archive HEAD` propre (pas le working directory) —
+# ça évite structurellement d'embarquer des fichiers gitignorés (ex. poids .pt/.onnx
+# de test), contrairement à un `python -m build` direct sur le dossier du repo.
+# Une seule implémentation du build+upload, ici, pas deux qui peuvent diverger.
 if [ "$SKIP_PYPI" = true ]; then
     echo -e "\n${YLW}Phase 7 sautée (--skip-pypi) — publier plus tard :${RST}"
-    echo "  cd ${SCCROP_REPO} && python -m build && twine upload dist/*"
+    echo "  bash ${SCCROP_REPO}/publish.sh"
 else
     step "Phase 7 — Publication PyPI v${PACKAGE_VERSION}"
-
-    rm -rf "${SCCROP_REPO}/dist" "${SCCROP_REPO}/build" "${SCCROP_REPO}"/*.egg-info
-    "$PYTHON" -m build "${SCCROP_REPO}"
-
-    # Garde-fou anti-régression (incident v0.7.0 : poids .pt/.onnx gitignorés embarqués
-    # par erreur car `build` sans setuptools_scm n'est pas conscient de git — il empaquette
-    # tout ce qui traîne physiquement dans le dossier du package).
-    BUNDLED_WEIGHTS=$(tar tzf "${SCCROP_REPO}"/dist/*.tar.gz | grep -E '\.(pt|onnx)$' || true)
-    if [ -n "$BUNDLED_WEIGHTS" ]; then
-        echo "ERREUR : le sdist contient des poids embarqués — build depuis un checkout non-propre ?"
-        echo "$BUNDLED_WEIGHTS"
-        exit 1
-    fi
-
-    twine check "${SCCROP_REPO}"/dist/*
-    twine upload "${SCCROP_REPO}"/dist/*
-
+    bash "${SCCROP_REPO}/publish.sh"
     info "Publié : https://pypi.org/project/sc-crop/${PACKAGE_VERSION}/"
 fi
 

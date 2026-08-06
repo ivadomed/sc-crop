@@ -141,9 +141,16 @@ examples:
                         help="Confidence threshold for the classification head (cls regularization)")
     parser.add_argument("--device", default=None,
                         help="Inference device: 'cpu', 'cuda', 'cuda:0', … (default: auto)")
-    parser.add_argument("--norm-scope", dest="norm_scope", default="volume",
+    # default=None (NOT "volume") is required: this lets detect() fall back to
+    # config.yaml's norm_scope, i.e. whatever normalisation the shipped model was
+    # actually trained with. Hardcoding a default here would silently override the
+    # model's training-time normalisation for anyone who omits --norm-scope.
+    parser.add_argument("--norm-scope", dest="norm_scope", default=None,
                         choices=["volume", "slice_all", "slice"],
-                        help="Intensity normalisation scope: volume (default), slice_all (all voxels per slice), or slice (foreground only per slice)")
+                        help="Intensity normalisation scope (default: from model config). "
+                             "volume: percentile 0.5/99.5 over the whole volume, computed once. "
+                             "slice_all: percentile 0.5/99.5 per slice, all voxels including background. "
+                             "slice: percentile 0.5/99.5 per slice, foreground voxels only.")
     args = parser.parse_args()
     input_path = args.input_flag or args.input
     if not input_path:
