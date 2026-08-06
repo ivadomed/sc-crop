@@ -76,8 +76,18 @@ if ! version_gt "${PACKAGE_VERSION}" "${LAST_PACKAGE_VERSION}"; then
     echo "ERREUR : --package-version=${PACKAGE_VERSION} n'est pas > dernière version publiée v${LAST_PACKAGE_VERSION} (VERSIONS.md)."
     exit 1
 fi
-if ! version_gt "${MODEL_VERSION}" "${LAST_MODEL_VERSION}"; then
-    echo "ERREUR : version modèle (sha256.yaml) =${MODEL_VERSION} n'est pas > dernière version publiée v${LAST_MODEL_VERSION} (VERSIONS.md). Modèle déjà publié ?"
+
+# Un fix qui ne touche que le package (aucun changement de poids) réutilise le même
+# MODEL_VERSION que la dernière ligne de VERSIONS.md — c'est un cas normal et déjà
+# arrivé historiquement (ex. v0.3.0→v0.4.1 partagent toutes le modèle v0.0.10).
+# Dans ce cas Phase 1 (nouvelle release GitHub du modèle) et Phase 3 (download.py,
+# rien à mettre à jour puisque l'URL/SHA256 sont identiques) sont sautées.
+MODEL_UNCHANGED=false
+if [ "${MODEL_VERSION}" = "${LAST_MODEL_VERSION}" ]; then
+    MODEL_UNCHANGED=true
+    echo "Info : version modèle inchangée (v${MODEL_VERSION}) — release package-only, Phases 1 et 3 sautées."
+elif ! version_gt "${MODEL_VERSION}" "${LAST_MODEL_VERSION}"; then
+    echo "ERREUR : version modèle (sha256.yaml) =${MODEL_VERSION} est INFÉRIEURE à la dernière publiée v${LAST_MODEL_VERSION} (VERSIONS.md) — régression ?"
     exit 1
 fi
 
@@ -89,18 +99,22 @@ info() { echo -e "  ${YLW}$*${RST}"; }
 # ════════════════════════════════════════════════════════════
 # PHASE 1 — RELEASE GITHUB (poids du modèle)
 # ════════════════════════════════════════════════════════════
-step "Phase 1 — Création de la release GitHub (modèle v${MODEL_VERSION})"
+if [ "$MODEL_UNCHANGED" = true ]; then
+    echo -e "\n${YLW}Phase 1 sautée — modèle v${MODEL_VERSION} déjà publié, réutilisé tel quel.${RST}"
+else
+    step "Phase 1 — Création de la release GitHub (modèle v${MODEL_VERSION})"
 
-gh release create "v${MODEL_VERSION}" \
-    "${EXPORT_DIR}/model.pt"       \
-    "${EXPORT_DIR}/model.onnx"     \
-    "${EXPORT_DIR}/cls_model.pt"   \
-    "${EXPORT_DIR}/cls_model.onnx" \
-    --repo ivadomed/sc-crop \
-    --title "sc-crop model v${MODEL_VERSION}" \
-    --notes "det=${DET_RUN}  cls=${CLS_RUN}  export_commit=${EXPORT_GIT_HASH:0:12}"
+    gh release create "v${MODEL_VERSION}" \
+        "${EXPORT_DIR}/model.pt"       \
+        "${EXPORT_DIR}/model.onnx"     \
+        "${EXPORT_DIR}/cls_model.pt"   \
+        "${EXPORT_DIR}/cls_model.onnx" \
+        --repo ivadomed/sc-crop \
+        --title "sc-crop model v${MODEL_VERSION}" \
+        --notes "det=${DET_RUN}  cls=${CLS_RUN}  export_commit=${EXPORT_GIT_HASH:0:12}"
 
-info "Release v${MODEL_VERSION} créée sur ivadomed/sc-crop"
+    info "Release v${MODEL_VERSION} créée sur ivadomed/sc-crop"
+fi
 
 
 # ════════════════════════════════════════════════════════════
@@ -146,6 +160,9 @@ info "config.yaml → sc_crop/config.yaml"
 # ════════════════════════════════════════════════════════════
 # PHASE 3 — MISE À JOUR DE sc_crop/download.py
 # ════════════════════════════════════════════════════════════
+if [ "$MODEL_UNCHANGED" = true ]; then
+    echo -e "\n${YLW}Phase 3 sautée — même modèle, même URL/SHA256, rien à changer dans download.py.${RST}"
+else
 step "Phase 3 — Mise à jour de sc_crop/download.py"
 
 "$PYTHON" - <<PYEOF
@@ -188,6 +205,7 @@ src = re.sub(
 path.write_text(src)
 print("  download.py mis à jour")
 PYEOF
+fi
 
 
 # ════════════════════════════════════════════════════════════
