@@ -66,8 +66,8 @@ def _ensure_file(name: str) -> Path:
 
 
 def ensure_model() -> Path:
-    """Return path to model.onnx, downloading and verifying if needed."""
-    return _ensure_file("model.onnx")
+    """Return path to the detector ONNX file, downloading and verifying if needed."""
+    return _ensure_file("det_model.onnx")
 
 
 def ensure_cls_model() -> Path:
@@ -77,6 +77,6 @@ def ensure_cls_model() -> Path:
 
 def download() -> None:
     """Pre-download model files. Optional — auto on first use."""
-    for name in ("model.onnx", "cls_model.onnx"):
+    for name in ("det_model.onnx", "cls_model.onnx"):
         _ensure_file(name)
     print(f"sc_crop models ready in {_CACHE_DIR}")

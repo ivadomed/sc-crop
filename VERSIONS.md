@@ -6,6 +6,7 @@ Ce fichier documente le lien entre la version du **package sc-crop**, la version
 
 | Package | Modèle  | Run d'entraînement                                   | Commit training repo                     |
 |---------|---------|------------------------------------------------------|------------------------------------------|
+| v0.12.1 | v0.0.11 | det=20260528_192341  cls=20260529_090157 | `8ae178918d91` |
 | v0.12.0 | v0.0.11 | det=20260528_192341  cls=20260529_090157 | `8ae178918d91` |
 | v0.11.0 | v0.0.10 | *(même modèle que v0.4.1 — breaking change package : `crop_metadata.json` remplace `crop_metadata.yaml`, voir [CHANGELOG.md](CHANGELOG.md))* | — |
 | v0.10.0 | v0.0.10 | *(même modèle que v0.4.1 — ajout `write_crop_metadata()`/`sc_crop write-metadata`, retrait de la clé `cropped_image` du yaml, voir [CHANGELOG.md](CHANGELOG.md))* | — |
