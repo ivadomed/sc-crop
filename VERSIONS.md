@@ -69,7 +69,7 @@ print(sc_crop.__model_version__)  # version du modèle,   ex. "v0.0.3"
 
 Deux étapes, deux dépôts — voir [MIGRATION.md](https://github.com/ivadomed/model_cropping_sc_contrast-agnostic_yolo/blob/main/MIGRATION.md) sur le repo d'entraînement pour le détail complet.
 
-1. Dans [model_cropping_sc_contrast-agnostic_yolo](https://github.com/ivadomed/model_cropping_sc_contrast-agnostic_yolo) : `python scripts/export_model.py --run-dir <det> --cls-run-dir <cls> --version <MODEL_VERSION>` → produit `release_export/`, tag ce dépôt automatiquement.
+1. Dans [model_cropping_sc_contrast-agnostic_yolo](https://github.com/ivadomed/model_cropping_sc_contrast-agnostic_yolo) : `python scripts/export_model.py --det-run-dir <det> --cls-run-dir <cls> --version <MODEL_VERSION>` → produit `release_export/`, tag ce dépôt automatiquement.
 2. Ici : `bash scripts/publish_release.sh --export-dir <chemin/vers/release_export> --package-version <PACKAGE_VERSION>`
 
 `publish_release.sh` orchestre automatiquement : création de la release GitHub (poids), déploiement de `config.yaml`, mise à jour de `download.py` et de ce fichier, bump de version du package, commit + tag + push, **et publication PyPI** (`build` + `twine upload`, avec vérification qu'aucun poids n'est embarqué par erreur).
