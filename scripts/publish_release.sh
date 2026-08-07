@@ -3,8 +3,8 @@
 # sc-crop release — GitHub release + PyPI publish
 #
 # Input: a release_export/ directory produced by export_model.py in the
-# training repo (model_cropping_sc_contrast-agnostic_yolo) — model.pt,
-# model.onnx, cls_model.pt, cls_model.onnx, config.yaml, sha256.yaml.
+# training repo (model_cropping_sc_contrast-agnostic_yolo) — det_model.pt,
+# det_model.onnx, cls_model.pt, cls_model.onnx, config.yaml, sha256.yaml.
 # This script only touches this repo (sc-crop) — it never reads anything
 # else from the training repo (no runs/, no checkpoints).
 #
@@ -35,7 +35,7 @@ EXPORT_DIR="$(cd "$EXPORT_DIR" && pwd)"
 
 SHA256_YAML="${EXPORT_DIR}/sha256.yaml"
 CONFIG_SRC="${EXPORT_DIR}/config.yaml"
-for f in "$SHA256_YAML" "$CONFIG_SRC" "${EXPORT_DIR}/model.pt" "${EXPORT_DIR}/model.onnx" "${EXPORT_DIR}/cls_model.pt" "${EXPORT_DIR}/cls_model.onnx"; do
+for f in "$SHA256_YAML" "$CONFIG_SRC" "${EXPORT_DIR}/det_model.pt" "${EXPORT_DIR}/det_model.onnx" "${EXPORT_DIR}/cls_model.pt" "${EXPORT_DIR}/cls_model.onnx"; do
     [ -f "$f" ] || { echo "ERREUR : $f introuvable — relance export_model.py côté training repo."; exit 1; }
 done
 
@@ -53,8 +53,8 @@ MODEL_VERSION=$(     "$PYTHON" -c "import yaml; print(yaml.safe_load(open('${SHA
 DET_RUN=$(            "$PYTHON" -c "import yaml; print(yaml.safe_load(open('${SHA256_YAML}'))['det_run'])")
 CLS_RUN=$(            "$PYTHON" -c "import yaml; print(yaml.safe_load(open('${SHA256_YAML}'))['cls_run'])")
 EXPORT_GIT_HASH=$(    "$PYTHON" -c "import yaml; print(yaml.safe_load(open('${SHA256_YAML}'))['export_git_hash'])")
-SHA_MODEL_ONNX=$(     "$PYTHON" -c "import yaml; print(yaml.safe_load(open('${SHA256_YAML}'))['assets']['model.onnx'])")
-SHA_MODEL_PT=$(       "$PYTHON" -c "import yaml; print(yaml.safe_load(open('${SHA256_YAML}'))['assets']['model.pt'])")
+SHA_MODEL_ONNX=$(     "$PYTHON" -c "import yaml; print(yaml.safe_load(open('${SHA256_YAML}'))['assets']['det_model.onnx'])")
+SHA_MODEL_PT=$(       "$PYTHON" -c "import yaml; print(yaml.safe_load(open('${SHA256_YAML}'))['assets']['det_model.pt'])")
 SHA_CLS_ONNX=$(       "$PYTHON" -c "import yaml; print(yaml.safe_load(open('${SHA256_YAML}'))['assets']['cls_model.onnx'])")
 SHA_CLS_PT=$(         "$PYTHON" -c "import yaml; print(yaml.safe_load(open('${SHA256_YAML}'))['assets']['cls_model.pt'])")
 
@@ -105,8 +105,8 @@ else
     step "Phase 1 — Création de la release GitHub (modèle v${MODEL_VERSION})"
 
     gh release create "v${MODEL_VERSION}" \
-        "${EXPORT_DIR}/model.pt"       \
-        "${EXPORT_DIR}/model.onnx"     \
+        "${EXPORT_DIR}/det_model.pt"   \
+        "${EXPORT_DIR}/det_model.onnx" \
         "${EXPORT_DIR}/cls_model.pt"   \
         "${EXPORT_DIR}/cls_model.onnx" \
         --repo ivadomed/sc-crop \
@@ -177,16 +177,16 @@ new_assets = textwrap.dedent("""
     _BASE_URL = f"https://github.com/ivadomed/sc-crop/releases/download/{_MODEL_TAG}"
 
     _ASSETS = {
-        "model.onnx": {
-            "url": f"{_BASE_URL}/model.onnx",
+        "det_model.onnx": {
+            "url": f"{_BASE_URL}/det_model.onnx",
             "sha256": "${SHA_MODEL_ONNX}",
         },
         "cls_model.onnx": {
             "url": f"{_BASE_URL}/cls_model.onnx",
             "sha256": "${SHA_CLS_ONNX}",
         },
-        "model.pt": {
-            "url": f"{_BASE_URL}/model.pt",
+        "det_model.pt": {
+            "url": f"{_BASE_URL}/det_model.pt",
             "sha256": "${SHA_MODEL_PT}",
         },
         "cls_model.pt": {
