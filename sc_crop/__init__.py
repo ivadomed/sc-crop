@@ -7,7 +7,7 @@ Public API:
     uncrop(img, bbox)                  → full-space NIfTI
     detect_and_crop(img_path, ...)     → (crop_nii, bbox)
     download()                         → pre-download models (auto on first use)
-    ensure_model()                     → path to model.onnx
+    ensure_model()                     → path to the detector ONNX file
     ensure_cls_model()                 → path to cls_model.onnx
     load_config()                      → loaded config dict
 

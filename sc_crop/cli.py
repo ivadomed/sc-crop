@@ -122,7 +122,7 @@ examples:
 
     # ── Detection options ─────────────────────────────────────────────────────
     parser.add_argument("--model", default=None,
-                        help="Path to model.onnx (override auto-downloaded model)")
+                        help="Path to a local detector ONNX file (override auto-downloaded model)")
     pad = parser.add_argument_group("padding (mm, detect / detect-crop) — individual > symmetric > default")
     pad.add_argument("--pad-sup",  type=float, default=None, dest="pad_superior",  metavar="MM")
     pad.add_argument("--pad-inf",  type=float, default=None, dest="pad_inferior",  metavar="MM")
