@@ -7,6 +7,14 @@ Public API (pure — no file I/O):
     detect_and_crop(img_path, ...)     → (NIfTI, bbox) — convenience: detect + crop in one call
     uncrop(img, bbox)     → NIfTI        — restore any cropped volume to original space
 
+4D support (e.g. fMRI):
+  detect() accepts a 4D image directly. Detection itself is inherently a 3D/slice
+  operation, so a single 3D reference volume is built from the 4D data — by default
+  the temporal mean, or a specific timepoint via `frame` — and used only to find the
+  bbox. The bbox is still 3D (x/y/z); crop() then applies it to the full 4D array,
+  slicing the spatial axes and leaving the time axis untouched. uncrop() similarly
+  generalises to place a cropped array (3D or 4D) back into the original spatial FOV.
+
 The context dict returned by detect() contains:
     xmin, xmax, ymin, ymax, zmin, zmax  — inclusive bbox in native voxel space
     original_axcodes                    — e.g. "RAS", "LPI"
@@ -147,9 +155,11 @@ class BBox3D:
         correct world position (required for FSLeyes overlay).
 
         Generic over orientation: bbox indices must match img's voxel orientation.
+        Also generic over extra axes beyond x/y/z (e.g. time in 4D fMRI), which are
+        sliced in full and left untouched.
         """
         data    = img.get_fdata(dtype=np.float32)
-        cropped = data[self.rl1:self.rl2, self.ap1:self.ap2, self.z1:self.z2]
+        cropped = data[self.rl1:self.rl2, self.ap1:self.ap2, self.z1:self.z2, ...]
         affine  = img.affine.copy()
         if translate:
             affine[:3, 3] = img.affine[:3, :3] @ np.array([self.rl1, self.ap1, self.z1]) \
@@ -509,7 +519,8 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
            regularization: str | None = None,
            cls_conf: float | None = None,
            device: str | None = None,
-           norm_scope: str | None = None) -> dict:
+           norm_scope: str | None = None,
+           frame: int | None = None) -> dict:
     """Detect the spinal cord bounding box. Pure — no files written.
 
     This is the primary entry point for inference pipelines. Call once, then
@@ -535,6 +546,11 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
         device:         "cpu", "cuda", "mps" — passed to ultralytics YOLO.predict().
         norm_scope:     "volume", "slice_all", or "slice" (default: from config.yaml —
                         must match training, see build_slices() for what each computes).
+        frame:          For 4D+ input only (e.g. fMRI): index of the volume/timepoint
+                        to run detection on. Default (None) uses the temporal mean
+                        across all volumes instead of any single one. Ignored for 3D
+                        input. The returned bbox is still 3D — crop() applies it to
+                        every timepoint of the full 4D array.
 
     Returns:
         bbox dict with:
@@ -586,12 +602,31 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
         img_name = Path(img_path).name
     original_ornt    = nib.io_orientation(img.affine)
     original_axcodes = "".join(str(a) for a in nib.aff2axcodes(img.affine))
-    img_las          = reorient_to_las(img)
+    img_las          = reorient_to_las(img)   # reorientation is axis flip/transpose only —
+                                               # works unchanged on 4D+ data (extra axes untouched)
     las_ornt         = axcodes2ornt(("L", "A", "S"))
     zooms            = tuple(float(v) for v in img_las.header.get_zooms()[:3])
-    shape            = img_las.shape
+    shape            = img_las.shape[:3]      # always the 3 spatial dims, even if img is 4D+
 
     print(f"Input   : {img_name}  shape={img.shape}  ornt={original_axcodes}")
+
+    # Detection is a 3D/slice operation. For 4D+ input (e.g. fMRI), build a single
+    # 3D reference volume to detect on — the temporal mean by default, or a chosen
+    # `frame` — while keeping img / img_las (full data) for crop()/uncrop() later.
+    if img_las.ndim > 3:
+        n_vols   = img_las.shape[3]
+        las_data = img_las.get_fdata(dtype=np.float32)
+        if frame is not None:
+            if not (0 <= frame < n_vols):
+                raise ValueError(f"frame={frame} out of range for {n_vols} volumes")
+            ref_data = las_data[..., frame]
+            print(f"4D input: {n_vols} volumes — detecting on frame {frame}")
+        else:
+            ref_data = las_data.mean(axis=3)
+            print(f"4D input: {n_vols} volumes — detecting on temporal mean")
+        ref_img_las = nib.Nifti1Image(ref_data, img_las.affine, img_las.header)
+    else:
+        ref_img_las = img_las
 
     from .download import ensure_cls_model, ensure_model
     from ultralytics import YOLO
@@ -601,7 +636,7 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
     cls_sess  = ort.InferenceSession(str(ensure_cls_model())) if regularization == "cls" else None
 
     si_zoom  = zooms[2] / si_res
-    img_inf  = resample_for_inference(img_las, si_res, inplane_res)
+    img_inf  = resample_for_inference(ref_img_las, si_res, inplane_res)
     data_inf = img_inf.get_fdata(dtype=np.float32)
 
     slices, las_idxs = build_slices(data_inf, channels, norm_scope)
@@ -653,17 +688,20 @@ def crop(img: "str | Path | nib.Nifti1Image", bbox: dict,
     """Crop a NIfTI image to the bbox detected by detect().
 
     Works for any volume in the same space as the image passed to detect() —
-    use it for both the image and its label(s).
+    use it for both the image and its label(s). The bbox only ever describes
+    the first 3 (spatial) axes; any further axes — e.g. time in a 4D fMRI
+    series — are sliced in full and left untouched, so this works unchanged
+    for 3D and 4D+ input.
 
     Args:
         img:       NIfTI image to crop — str/Path (loaded automatically) or
-                   a pre-loaded nib.Nifti1Image.
+                   a pre-loaded nib.Nifti1Image. May be 3D or 4D+ (e.g. fMRI).
         bbox:      Context dict returned by detect() or detect_and_crop().
         translate: If True (default), update the affine so the crop sits at the
                    correct world position (required for FSLeyes overlay).
 
     Returns:
-        nib.Nifti1Image cropped to the detected bbox.
+        nib.Nifti1Image cropped to the detected bbox (same number of dims as img).
 
     Example::
 
@@ -673,6 +711,12 @@ def crop(img: "str | Path | nib.Nifti1Image", bbox: dict,
         bbox = detect(img)                    # pass NIfTI directly
         crop_img   = crop(img,           bbox)
         crop_label = crop("t2_seg.nii.gz", bbox)  # or pass a path
+
+        # 4D (e.g. fMRI): detect on the volume itself (temporal mean by default),
+        # bbox is applied across every timepoint automatically.
+        bold      = nib.load("bold.nii.gz")   # shape (X, Y, Z, T)
+        bbox      = detect(bold)
+        bold_crop = crop(bold, bbox)          # shape (x, y, z, T)
     """
     if not isinstance(img, nib.Nifti1Image):
         img = nib.load(img)
@@ -684,7 +728,9 @@ def crop(img: "str | Path | nib.Nifti1Image", bbox: dict,
     affine = img.affine.copy()
     if translate:
         affine[:3, 3] = (img.affine @ np.array([xmin, ymin, zmin, 1.0]))[:3]
-    return nib.Nifti1Image(data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], affine, img.header)
+    # Ellipsis preserves any axes beyond x/y/z (e.g. time) exactly as-is.
+    cropped = data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1, ...]
+    return nib.Nifti1Image(cropped, affine, img.header)
 
 
 def detect_and_crop(img_path, **kwargs) -> tuple:
@@ -713,21 +759,27 @@ def uncrop(seg_nii, bbox) -> "nib.Nifti1Image":
     If your model reoriented the crop (e.g., to RPI), reorient back
     before calling this function (see detect_and_crop() example).
 
+    Works for 3D input (e.g. a segmentation mask) as well as 4D+ input
+    (e.g. a cropped fMRI series) — any axes beyond x/y/z are preserved as-is
+    and placed at the same spatial location for every timepoint.
+
     Args:
-        seg_nii: NIfTI volume in cropped space (original orientation).
+        seg_nii: NIfTI volume in cropped space (original orientation). 3D or 4D+.
         bbox:     Context dict returned by detect() or detect_and_crop().
 
     Returns:
-        nib.Nifti1Image with segmentation padded to the full original image space,
-        using the original affine and header.
+        nib.Nifti1Image with seg_nii's data padded to the full original image's
+        spatial extent (plus any extra axes from seg_nii), using the original
+        affine and header. Output dtype matches seg_nii, not forced to uint8.
     """
     original_img = bbox["_original_img"]
     xmin, xmax   = bbox["xmin"], bbox["xmax"]
     ymin, ymax   = bbox["ymin"], bbox["ymax"]
     zmin, zmax   = bbox["zmin"], bbox["zmax"]
 
-    full    = np.zeros(original_img.shape[:3], dtype=np.uint8)
-    seg_arr = np.asarray(seg_nii.dataobj).astype(np.uint8)
-    full[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1] = seg_arr
+    seg_arr    = np.asarray(seg_nii.dataobj)
+    full_shape = original_img.shape[:3] + seg_arr.shape[3:]
+    full       = np.zeros(full_shape, dtype=seg_arr.dtype)
+    full[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1, ...] = seg_arr
 
     return nib.Nifti1Image(full, original_img.affine, original_img.header)
