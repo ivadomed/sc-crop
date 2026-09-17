@@ -610,8 +610,8 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
     cls_sess  = ort.InferenceSession(str(ensure_cls_model())) if regularization == "cls" else None
 
     si_zoom  = zooms[2] / si_res
-    img_inf  = resample_for_inference(img_las, si_res, inplane_res)
-    data_inf = img_inf.get_fdata(dtype=np.float32)
+    img_inf  = img_las # resample_for_inference(img_las, si_res, inplane_res) 
+    data_inf = img_las.get_fdata(dtype=np.float32)
 
     slices, las_idxs = build_slices(data_inf, channels, norm_scope)
 
