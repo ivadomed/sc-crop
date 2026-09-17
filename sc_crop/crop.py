@@ -584,6 +584,7 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
     else:
         img      = nib.load(img_path)
         img_name = Path(img_path).name
+
     original_ornt    = nib.io_orientation(img.affine)
     original_axcodes = "".join(str(a) for a in nib.aff2axcodes(img.affine))
     img_las          = reorient_to_las(img)
@@ -592,6 +593,14 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
     shape            = img_las.shape
 
     print(f"Input   : {img_name}  shape={img.shape}  ornt={original_axcodes}")
+
+    if img_las.ndim != 3:
+        _original_img = img
+        _img_las      = img_las
+        full_img_data = img_las.get_fdata(dtype=np.float32).copy()
+        img_las.dataobj = np.asanyarray(full_img_data[..., 0])  # drop extra dims (e.g. 4D fMRI)
+        print(f"Warning : input image has {img_las.ndim} dimensions — using only the first 3D volume for detection")
+        print(f"         : original image shape={img_las.shape}  dtype={img_las.get_data_dtype()}")
 
     from .download import ensure_cls_model, ensure_model
     from ultralytics import YOLO
@@ -682,9 +691,14 @@ def crop(img: "str | Path | nib.Nifti1Image", bbox: dict,
 
     data   = np.asarray(img.dataobj)
     affine = img.affine.copy()
+    if data.ndim > 3:
+        for t in range(data.shape[3]):
+            data[..., t] = data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1, t]
+    else:
+        data = data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1]
     if translate:
         affine[:3, 3] = (img.affine @ np.array([xmin, ymin, zmin, 1.0]))[:3]
-    return nib.Nifti1Image(data[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1], affine, img.header)
+    return nib.Nifti1Image(data, affine, img.header)
 
 
 def detect_and_crop(img_path, **kwargs) -> tuple:
@@ -703,20 +717,9 @@ def detect_and_crop(img_path, **kwargs) -> tuple:
         to crop() or uncrop().
     """
     img = nib.load(img_path) 
-    dim = len(img.shape)
-    if dim == 4:
-        print(f"Input 4D image detected: {img_path}  shape={img.shape}  cropping each volume separately")
-        crops = []
-        for t in range(img.shape[3]):
-            img_t = nib.Nifti1Image(img.dataobj[:, :, :, t], img.affine, img.header)
-            bbox = detect(img_t, **kwargs)
-            crops.append(crop(img_t, bbox))
-        crop_nii = nib.Nifti1Image(np.stack([c.dataobj for c in crops], axis=3), img.affine, img.header)
-        return crop_nii, bbox
-
-    else: 
-        bbox = detect(img_path, **kwargs)
-        return crop(bbox["_original_img"], bbox), bbox
+     
+    bbox = detect(img_path, **kwargs)
+    return crop(bbox["_original_img"], bbox), bbox
 
 
 def uncrop(seg_nii, bbox) -> "nib.Nifti1Image":
@@ -745,8 +748,3 @@ def uncrop(seg_nii, bbox) -> "nib.Nifti1Image":
 
     return nib.Nifti1Image(full, original_img.affine, original_img.header)
 
-if __name__ == "__main__":
-    img_path = "test_sub.nii.gz"
-    cropped_nii, bbox = detect_and_crop(img_path)
-    print(bbox)
-    nib.save(cropped_nii, "test_sub_crop.nii.gz")
