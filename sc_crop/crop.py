@@ -594,13 +594,19 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
 
     print(f"Input   : {img_name}  shape={img.shape}  ornt={original_axcodes}")
 
-    if img_las.ndim != 3:
+   if img_las.ndim != 3:
         _original_img = img
         _img_las      = img_las
-        full_img_data = img_las.get_fdata(dtype=np.float32).copy()
-        img_las.dataobj = np.asanyarray(full_img_data[..., 0])  # drop extra dims (e.g. 4D fMRI)
+        
+        # Extract the first 3D volume
+        full_img_data = img_las.get_fdata(dtype=np.float32)
+        first_3d_vol  = np.asanyarray(full_img_data[..., 0])
+        
         print(f"Warning : input image has {img_las.ndim} dimensions — using only the first 3D volume for detection")
         print(f"         : original image shape={img_las.shape}  dtype={img_las.get_data_dtype()}")
+
+        # Reconstruct a valid 3D nibabel object sharing original affine & header
+        img_las = nib.Nifti1Image(first_3d_vol, img_las.affine, header=img_las.header)
 
     from .download import ensure_cls_model, ensure_model
     from ultralytics import YOLO
