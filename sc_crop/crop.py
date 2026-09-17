@@ -702,8 +702,21 @@ def detect_and_crop(img_path, **kwargs) -> tuple:
         (crop_nii, bbox) where crop_nii is the cropped image and bbox is passed
         to crop() or uncrop().
     """
-    bbox = detect(img_path, **kwargs)
-    return crop(bbox["_original_img"], bbox), bbox
+    img = nib.load(img_path) 
+    dim = len(img.shape)
+    if dim == 4:
+        print(f"Input 4D image detected: {img_path}  shape={img.shape}  cropping each volume separately")
+        crops = []
+        for t in range(img.shape[3]):
+            img_t = nib.Nifti1Image(img.dataobj[:, :, :, t], img.affine, img.header)
+            bbox = detect(img_t, **kwargs)
+            crops.append(crop(img_t, bbox))
+        crop_nii = nib.Nifti1Image(np.stack([c.dataobj for c in crops], axis=3), img.affine, img.header)
+        return crop_nii, bbox
+
+    else: 
+        bbox = detect(img_path, **kwargs)
+        return crop(bbox["_original_img"], bbox), bbox
 
 
 def uncrop(seg_nii, bbox) -> "nib.Nifti1Image":
@@ -731,3 +744,9 @@ def uncrop(seg_nii, bbox) -> "nib.Nifti1Image":
     full[xmin:xmax+1, ymin:ymax+1, zmin:zmax+1] = seg_arr
 
     return nib.Nifti1Image(full, original_img.affine, original_img.header)
+
+if __name__ == "__main__":
+    img_path = "test_sub.nii.gz"
+    cropped_nii, bbox = detect_and_crop(img_path)
+    print(bbox)
+    nib.save(cropped_nii, "test_sub_crop.nii.gz")
