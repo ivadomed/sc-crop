@@ -594,7 +594,7 @@ def detect(img_path: "str | Path | nib.Nifti1Image",
 
     print(f"Input   : {img_name}  shape={img.shape}  ornt={original_axcodes}")
 
-   if img_las.ndim != 3:
+    if img_las.ndim != 3:
         _original_img = img
         _img_las      = img_las
         
