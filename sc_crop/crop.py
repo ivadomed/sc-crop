@@ -706,7 +706,7 @@ def detect_and_crop(img_path, **kwargs) -> tuple:
     return crop(bbox["_original_img"], bbox), bbox
 
 
-def uncrop(seg_nii, bbox, dtype=np.uint8) -> "nib.Nifti1Image":
+def uncrop(seg_nii, bbox) -> "nib.Nifti1Image":
     """Place any cropped volume back into the full original image space.
 
     The volume must be in the same orientation as the original image.
@@ -716,7 +716,6 @@ def uncrop(seg_nii, bbox, dtype=np.uint8) -> "nib.Nifti1Image":
     Args:
         seg_nii: NIfTI volume in cropped space (original orientation).
         bbox:     Context dict returned by detect() or detect_and_crop().
-        dtype:   Output data type (default uint8). Use np.float32 for soft-segmentation outputs.
 
     Returns:
         nib.Nifti1Image with segmentation padded to the full original image space,
