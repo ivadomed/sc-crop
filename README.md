@@ -1,5 +1,7 @@
 # sc-crop — Spinal cord detection and cropping
 
+> **AI disclosure:** Parts of this repository were developed with the assistance of Claude Code. All AI-generated contributions were reviewed and validated by the project maintainers.
+
 <img width="1635" height="977" alt="image" src="https://github.com/user-attachments/assets/882bb621-685d-4efa-bc45-f484cfe78ab0" />
 
 
