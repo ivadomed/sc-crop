@@ -1,6 +1,5 @@
 # sc-crop — Spinal cord detection and cropping
 
-<img width="1635" height="977" alt="image" src="https://github.com/user-attachments/assets/882bb621-685d-4efa-bc45-f484cfe78ab0" />
 
 
 
