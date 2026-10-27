@@ -1,0 +1,215 @@
+# Dataset registry for spine detection project.
+#
+# Fields per dataset:
+#   name         : directory name in data/raw/
+#   host         : neuro | spine-generic | spineimage
+#   url_https    : HTTPS URL for browsing in a web browser
+#   url_ssh      : SSH clone URL (null = manual download)
+#   mask_suffix  : SC mask filename suffix (required)
+#   labels_dir   : subdirectory under derivatives/ containing labels (default: labels)
+#   img_glob     : glob pattern to find the image from the subject/plane dir when the standard
+#                  mask-stem derivation doesn't work (e.g. fMRI: "*_bold.nii.gz"). Default: null.
+#   region       : cervical | lumbar | mixed | null (unknown)
+#   (out-of-domain test-only datasets are specified in configs/training_dataset.yaml → test_datasets)
+#
+# spineimage datasets are cloned via SSH (Gitea) — requires SSH key access to spineimage.ca.
+#
+# Inspired from: https://github.com/ivadomed/model_cropping_sc_contrast-agnostic_yolo/blob/main/configs/datasets.yaml
+
+datasets:
+
+  # ── data.neuro.polymtl.ca ────────────────────────────────────────────────────
+  - name: basel-mp2rage
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/basel-mp2rage
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/basel-mp2rage
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      cervical
+
+  - name: canproco
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/canproco
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/canproco
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      cervical
+
+  - name: dcm-brno
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/dcm-brno
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/dcm-brno
+    mask_suffix: _seg.nii.gz
+    region:      cervical
+
+  - name: dcm-zurich-lesions-20231115
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/dcm-zurich-lesions-20231115
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/dcm-zurich-lesions-20231115
+    mask_suffix: _label-SC_mask-manual.nii.gz
+    region:      cervical
+
+  - name: dcm-zurich-lesions
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/dcm-zurich-lesions
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/dcm-zurich-lesions
+    mask_suffix: _label-SC_mask-manual.nii.gz
+    region:      cervical
+
+  - name: dcm-zurich
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/dcm-zurich
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/dcm-zurich
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      cervical
+
+  - name: lumbar-epfl
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/lumbar-epfl
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/lumbar-epfl
+    mask_suffix: _seg-manual.nii.gz
+    region:      lumbar
+
+  - name: lumbar-vanderbilt
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/lumbar-vanderbilt
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/lumbar-vanderbilt
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      lumbar
+
+  - name: hc-lumbar-zurich
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/hc-lumbar-zurich
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/hc-lumbar-zurich
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      lumbar
+
+  - name: hc-lumbar-shanghai
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/hc-lumbar-shanghai
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/hc-lumbar-shanghai
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      lumbar
+
+  - name: philadelphia-pediatric
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/philadelphia-pediatric
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/philadelphia-pediatric
+    mask_suffix: _label-SC_mask.nii.gz
+    region:      null
+
+  - name: head-neck-tumor-challenge-2024
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/head-neck-tumor-challenge-2024
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/head-neck-tumor-challenge-2024
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      null
+
+  - name: marseille-3t-mp2rage
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/marseille-3t-mp2rage
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/marseille-3t-mp2rage
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      cervical
+
+  - name: inspired
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/inspired
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/inspired
+    mask_suffix: _label-SC_seg.nii.gz
+    labels_dir:  manual_labels
+    region:      null
+
+  - name: dcm-oklahoma
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/dcm-oklahoma
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/dcm-oklahoma
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      cervical
+
+  - name: beijing-tumor
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/beijing-tumor
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/beijing-tumor
+    mask_suffix: _sc-mask.nii.gz
+    region:      null
+
+  - name: nih-ms-mp2rage
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/nih-ms-mp2rage
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/nih-ms-mp2rage
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      cervical
+
+  - name: sci-colorado
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/sci-colorado
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/sci-colorado
+    mask_suffix: _seg-manual.nii.gz
+    region:      cervical
+
+  - name: sci-zurich
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/sci-zurich
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/sci-zurich
+    mask_suffix: _seg-manual.nii.gz
+    region:      cervical
+
+  - name: sct-testing-large
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/sct-testing-large
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/sct-testing-large
+    mask_suffix: _seg-manual.nii.gz
+    region:      mixed
+
+  - name: spider-challenge-2023
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/spider-challenge-2023
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/spider-challenge-2023
+    mask_suffix:  _label-SC_seg.nii.gz
+    region:       lumbar
+
+  - name: whole-spine
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/whole-spine
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/whole-spine
+    mask_suffix:  _label-SC_seg.nii.gz
+    region:       mixed
+
+  # ── GitHub (spine-generic) ───────────────────────────────────────────────────
+  - name: data-multi-subject
+    host: spine-generic
+    url_https: https://github.com/spine-generic/data-multi-subject
+    url_ssh:   git@github.com:spine-generic/data-multi-subject.git
+    mask_suffix:  _label-SC_seg.nii.gz
+    region:       cervical
+
+  # ── spineimage.ca (Gitea SSH) ────────────────────────────────────────────────
+  - name: site_006
+    host: spineimage
+    url_https: https://spineimage.ca/MON/site_006
+    url_ssh:   gitea@spineimage.ca:MON/site_006.git
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      cervical
+
+  - name: site_007
+    host: spineimage
+    url_https: https://spineimage.ca/VGH/site_007
+    url_ssh:   gitea@spineimage.ca:VGH/site_007.git
+    mask_suffix: _label-SC_seg.nii.gz
+    region:      cervical
+
+  - name: ds005143
+    host: OpenNeuroDatasets
+    url_https: https://github.com/OpenNeuroDatasets/ds005143.git
+    url_ssh: null
+    mask_suffix: spinalcordmask.nii.gz
+    labels_dir: label
+    img_glob: "*_bold.nii.gz"
+    region: mixed
+
+  # ── Zenodo (téléchargement direct, pas git-annex) ────────────────────────────
+  - name: totalsegmentator
+    host: zenodo
+    url_https: https://zenodo.org/records/10047292
+    url_ssh: null
+    mask_suffix: _label-SC_seg.nii.gz
+    region: mixed
