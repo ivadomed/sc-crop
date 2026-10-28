@@ -8,7 +8,8 @@ orientation (axial/sagittal/coronal), field strength, region and the value of th
 (sc_label_value: 1 for binary masks, spinal_cord_label_index from datasets.yaml for multi-class masks).
 
 Outputs (in OUTPUT_FOLDER):
-    - sc_seg_msd_<YYYYMMDD>.json : the MSD dataset (absolute paths to images and labels)
+    - sc_seg_msd_<YYYYMMDD>.json : the MSD dataset (absolute paths to images and labels), split into
+                                   training/validation/test (60/20/20% of the subjects of each dataset)
     - sc_seg_msd_<YYYYMMDD>.log  : statistics of the dataset and list of skipped segmentations
 
 Usage:
@@ -21,6 +22,7 @@ Author: Pierre-Louis Benveniste
 import argparse
 import csv
 import json
+import random
 import re
 from collections import Counter, defaultdict
 from datetime import date
@@ -38,6 +40,9 @@ ISOTROPY_RATIO = 1.2
 CONTRASTS_3D = {"MP2RAGE", "UNIT1"}
 # First letter of the axis code (from nibabel) → anatomical plane of the slices along that axis
 PLANE_FROM_AXIS = {"R": "sagittal", "L": "sagittal", "A": "coronal", "P": "coronal", "S": "axial", "I": "axial"}
+# Fraction of subjects of each dataset in each split, and seed of the shuffle (for reproducibility)
+SPLITS = {"training": 0.6, "validation": 0.2, "test": 0.2}
+SEED = 42
 
 
 def get_parser():
@@ -171,11 +176,40 @@ def collect_dataset(cfg, data_dir, skipped):
     return entries
 
 
+def split_subjects(entries):
+    """Set entry["split"] to training/validation/test, at the subject level: all images of a subject are
+    in the same split. Subjects are split 60/20/20 within each dataset so every dataset is in every split."""
+    subjects = defaultdict(set)
+    for e in entries:
+        subjects[e["dataset"]].add(e["subject"])
+
+    rng = random.Random(SEED)
+    split_of = {}
+    for dataset, dataset_subjects in sorted(subjects.items()):
+        dataset_subjects = sorted(dataset_subjects)   # sorted first so the shuffle is reproducible
+        rng.shuffle(dataset_subjects)
+        n_train = round(SPLITS["training"] * len(dataset_subjects))
+        n_val = round(SPLITS["validation"] * len(dataset_subjects))
+        for i, subject in enumerate(dataset_subjects):
+            split_of[(dataset, subject)] = "training" if i < n_train else "validation" if i < n_train + n_val else "test"
+
+    for e in entries:
+        e["split"] = split_of[(e["dataset"], e["subject"])]
+
+
 def format_stats(entries, skipped):
     """Return the dataset statistics as a text block."""
     lines = [f"Number of SC segmentations (without skipped) : {len(entries)}",
              f"Number of subjects (without skipped) : {len({(e['dataset'], e['subject']) for e in entries})}",
              f"Number of skipped segmentations/datasets: {len(skipped)}", ""]
+
+    # Split sizes, in subjects and in segmentations
+    lines.append("--- Per split ---")
+    for split in SPLITS:
+        split_entries = [e for e in entries if e["split"] == split]
+        n_subjects = len({(e["dataset"], e["subject"]) for e in split_entries})
+        lines.append(f"  {split:<12} {n_subjects} subjects, {len(split_entries)} segmentations")
+    lines.append("")
 
     for key in ("dataset", "site", "pathology", "contrast", "acquisition", "orientation", "field_strength", "region"):
         lines.append(f"--- Per {key} ---")
@@ -221,6 +255,7 @@ def main():
         dataset_entries = collect_dataset(cfg, data_dir, skipped)
         print(f"  {len(dataset_entries)} SC segmentations")
         entries.extend(dataset_entries)
+    split_subjects(entries)
 
     msd = {
         "name": "sc_seg",
@@ -230,14 +265,16 @@ def main():
         # Most labels are binary SC masks; multi-class labels contain other structures too,
         # the SC being the voxels equal to each entry's "sc_label_value"
         "labels": {"0": "background", "1": "spinal cord"},
-        "numData": len(entries),
-        "data": entries,
+        "numTraining": sum(e["split"] == "training" for e in entries),
+        "numValidation": sum(e["split"] == "validation" for e in entries),
+        "numTest": sum(e["split"] == "test" for e in entries),
+        **{split: [e for e in entries if e["split"] == split] for split in SPLITS},
     }
-    json_path = args.output_dir / f"sc_seg_msd_{today}.json"
+    json_path = args.output_dir / f"dataset_msd_{today}.json"
     json_path.write_text(json.dumps(msd, indent=4))
 
     stats = format_stats(entries, skipped)
-    log_path = args.output_dir / f"sc_seg_msd_{today}.log"
+    log_path = args.output_dir / f"dataset_msd_{today}.log"
     log_path.write_text(f"MSD dataset: {json_path}\nData folder: {data_dir}\n\n{stats}\n")
 
     print(stats)
