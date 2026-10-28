@@ -3,7 +3,7 @@ Aggregate all spinal cord (SC) segmentations of the datasets listed in datasets.
 MSD-style json file.
 
 For each SC segmentation, the json stores the image, the label and the following metadata:
-dataset, subject, session, site, pathology, contrast, resolution, image shape, acquisition (2D/3D),
+dataset, subject, site, pathology, contrast, resolution, image shape, acquisition (2D/3D),
 orientation (axial/sagittal/coronal), field strength, region and the value of the SC in the label
 (sc_label_value: 1 for binary masks, spinal_cord_label_index from datasets.yaml for multi-class masks).
 
@@ -30,6 +30,8 @@ import nibabel as nib
 import numpy as np
 import yaml
 
+# Dataset registry of the repo, next to this script
+CONFIG = Path(__file__).parent / "datasets.yaml"
 # A volume is almost isotropic (→ 3D) when its thickest voxel side is less than this many times its thinnest one
 ISOTROPY_RATIO = 1.2
 # Contrasts that are always 3D acquisitions
@@ -42,8 +44,6 @@ def get_parser():
     parser = argparse.ArgumentParser(description="Build an MSD dataset of all SC segmentations.")
     parser.add_argument("--data-dir", required=True, type=Path, help="Folder containing all datasets.")
     parser.add_argument("--output-dir", required=True, type=Path, help="Folder where the json and log are saved.")
-    parser.add_argument("--config", type=Path, default=Path(__file__).parent / "datasets.yaml",
-                        help="Dataset registry (default: datasets.yaml next to this script).")
     return parser
 
 
@@ -128,14 +128,8 @@ def collect_dataset(cfg, data_dir, skipped):
         if image is None:
             skipped.append(f"{name}: no image found for {mask}")
             continue
-        # exists() is False for git-annex files that are not downloaded
-        not_downloaded = [p for p in (image, mask) if not p.exists()]
-        if not_downloaded:
-            skipped.append(f"{name}: not downloaded (git annex get) {not_downloaded[0]}")
-            continue
 
         subject = re.search(r"sub-[A-Za-z0-9]+", image.name)
-        session = re.search(r"ses-[A-Za-z0-9]+", image.name)
         subject = subject.group(0) if subject else "unknown"
         # BIDS suffix of the image: sub-01_acq-sag_T2w.nii.gz → T2w
         contrast = image.name.removesuffix(".nii.gz").split("_")[-1]
@@ -150,7 +144,6 @@ def collect_dataset(cfg, data_dir, skipped):
             "label": str(mask),
             "dataset": name,
             "subject": subject,
-            "session": session.group(0) if session else None,
             "site": get_site(subject, name, cfg.get("multi_site", False)),
             "pathology": pathologies.get(subject, "unknown"),
             "contrast": contrast,
@@ -203,7 +196,7 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
     today = date.today().strftime("%Y%m%d")
 
-    with open(args.config) as f:
+    with open(CONFIG) as f:
         datasets = yaml.safe_load(f)["datasets"]
 
     entries, skipped = [], []
