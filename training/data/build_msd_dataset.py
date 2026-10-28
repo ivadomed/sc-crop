@@ -47,25 +47,30 @@ def get_parser():
     return parser
 
 
-def find_image(mask_path, labels_root, dataset_root, mask_suffix, img_glob):
+def find_image(mask_path, labels_root, dataset_root, mask_suffix, img_glob, image_dirs):
     """Return the image matching a mask, or None if it can't be found."""
     rel_dir = mask_path.parent.relative_to(labels_root)
     if img_glob:
         # Non-standard naming: look for the image in the same subject folder of the raw data
         matches = sorted((dataset_root / rel_dir).glob(img_glob))
         return matches[0] if len(matches) == 1 else None
-    # BIDS naming: sub-01_T2w_label-SC_seg.nii.gz → sub-01_T2w.nii.gz
-    image = dataset_root / rel_dir / mask_path.name.replace(mask_suffix, ".nii.gz")
-    # is_symlink() keeps git-annex files that are not downloaded, so they are reported as such
-    return image if image.exists() or image.is_symlink() else None
+    # BIDS naming: sub-01_T2w_label-SC_seg.nii.gz → sub-01_T2w.nii.gz, looked for in the raw data,
+    # then in the extra image folders (e.g. derivatives/motion_correction for moco images)
+    name = mask_path.name.replace(mask_suffix, ".nii.gz")
+    for root in [dataset_root] + [dataset_root / d for d in image_dirs]:
+        image = root / rel_dir / name
+        # is_symlink() keeps git-annex files that are not downloaded, so they are reported as such
+        if image.exists() or image.is_symlink():
+            return image
+    return None
 
 
 def get_site(subject, dataset, multi_site):
-    """Site of a subject: dataset name, or for multi-site datasets the subject name without trailing digits."""
+    """Site of a subject: dataset name, or for multi-site datasets <dataset>__<subject name without trailing digits>."""
     if not multi_site:
         return dataset
     site = re.sub(r"\d+$", "", subject.removeprefix("sub-"))
-    return site or dataset
+    return f"{dataset}__{site}" if site else dataset
 
 
 def read_pathologies(dataset_root):
@@ -99,9 +104,12 @@ def get_image_metadata(image_path, contrast):
         slice_axis = int(np.argmax(zooms))
         orientation = PLANE_FROM_AXIS[nib.aff2axcodes(img.affine)[slice_axis]]
 
-    # Field strength from the BIDS json sidecar
+    # Field strength from the BIDS json sidecar; a missing, empty or invalid sidecar is ignored
     sidecar = Path(str(image_path).replace(".nii.gz", ".json"))
-    info = json.loads(sidecar.read_text()) if sidecar.exists() else {}
+    try:
+        info = json.loads(sidecar.read_text())
+    except (OSError, json.JSONDecodeError):
+        info = {}
     field_strength = info.get("MagneticFieldStrength", "unknown")
 
     return {"resolution": zooms, "shape": shape, "acquisition": acquisition,
@@ -124,7 +132,14 @@ def collect_dataset(cfg, data_dir, skipped):
 
     entries = []
     for mask in sorted(labels_root.rglob(f"*{cfg['mask_suffix']}")):
-        image = find_image(mask, labels_root, dataset_root, cfg["mask_suffix"], cfg.get("img_glob"))
+        # Some datasets (e.g. dcm-brno) have extra derivatives outside anat/ that must not be used
+        if cfg.get("anat_only") and mask.parent.name != "anat":
+            continue
+        # Other labels sharing the mask suffix (e.g. dcm-brno: _label-canal_seg.nii.gz vs _seg.nii.gz)
+        if mask.name.endswith(tuple(cfg.get("exclude_suffixes", []))):
+            continue
+        image = find_image(mask, labels_root, dataset_root, cfg["mask_suffix"], cfg.get("img_glob"),
+                           cfg.get("image_dirs", []))
         if image is None:
             skipped.append(f"{name}: no image found for {mask}")
             continue
@@ -132,10 +147,11 @@ def collect_dataset(cfg, data_dir, skipped):
         subject = re.search(r"sub-[A-Za-z0-9]+", image.name)
         subject = subject.group(0) if subject else "unknown"
         # BIDS suffix of the image: sub-01_acq-sag_T2w.nii.gz → T2w
-        contrast = image.name.removesuffix(".nii.gz").split("_")[-1]
+        # (motion-corrected images: sub-101_run-1_dwi_moco.nii.gz → dwi)
+        contrast = image.name.removesuffix(".nii.gz").removesuffix("_moco").split("_")[-1]
         try:
             metadata = get_image_metadata(image, contrast)
-        except Exception as e:
+        except Exception as e:   # corrupted or partially downloaded image
             skipped.append(f"{name}: could not read {image} ({e})")
             continue
 
@@ -157,8 +173,8 @@ def collect_dataset(cfg, data_dir, skipped):
 
 def format_stats(entries, skipped):
     """Return the dataset statistics as a text block."""
-    lines = [f"Number of SC segmentations: {len(entries)}",
-             f"Number of subjects: {len({(e['dataset'], e['subject']) for e in entries})}",
+    lines = [f"Number of SC segmentations (without skipped) : {len(entries)}",
+             f"Number of subjects (without skipped) : {len({(e['dataset'], e['subject']) for e in entries})}",
              f"Number of skipped segmentations/datasets: {len(skipped)}", ""]
 
     for key in ("dataset", "site", "pathology", "contrast", "acquisition", "orientation", "field_strength", "region"):
