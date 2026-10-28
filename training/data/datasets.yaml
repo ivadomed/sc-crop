@@ -10,6 +10,10 @@
 #   img_glob     : glob pattern to find the image from the subject/plane dir when the standard
 #                  mask-stem derivation doesn't work (e.g. fMRI: "*_bold.nii.gz"). Default: null.
 #   region       : cervical | lumbar | mixed | null (unknown)
+#   multi_site   : true if the site is encoded in the subject name before the trailing digits
+#                  (e.g. sub-mon001 → mon). Default: false (site = dataset name).
+#   spinal_cord_label_index : value of the SC in multi-class masks (e.g. TotalSegmentator dseg).
+#                  Default: 1 (binary SC mask).
 #   (out-of-domain test-only datasets are specified in configs/training_dataset.yaml → test_datasets)
 #
 # spineimage datasets are cloned via SSH (Gitea) — requires SSH key access to spineimage.ca.
@@ -32,6 +36,7 @@ datasets:
     url_ssh:   git@data.neuro.polymtl.ca:datasets/canproco
     mask_suffix: _label-SC_seg.nii.gz
     region:      cervical
+    multi_site:  true
 
   - name: dcm-brno
     host: neuro
@@ -117,6 +122,7 @@ datasets:
     mask_suffix: _label-SC_seg.nii.gz
     labels_dir:  manual_labels
     region:      null
+    multi_site:  true
 
   - name: dcm-oklahoma
     host: neuro
@@ -159,6 +165,7 @@ datasets:
     url_ssh:   git@data.neuro.polymtl.ca:datasets/sct-testing-large
     mask_suffix: _seg-manual.nii.gz
     region:      mixed
+    multi_site:  true
 
   - name: spider-challenge-2023
     host: neuro
@@ -173,6 +180,23 @@ datasets:
     url_ssh:   git@data.neuro.polymtl.ca:datasets/whole-spine
     mask_suffix:  _label-SC_seg.nii.gz
     region:       mixed
+    multi_site:   true
+
+  - name: fullbody-totalsegmentator-mri
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/fullbody-totalsegmentator-mri
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/fullbody-totalsegmentator-mri
+    mask_suffix:  _label-body_dseg.nii.gz
+    region:       mixed
+    spinal_cord_label_index: 46
+
+  - name: fullbody-totalsegmentator-ct
+    host: neuro
+    url_https: https://data.neuro.polymtl.ca/datasets/fullbody-totalsegmentator-ct
+    url_ssh:   git@data.neuro.polymtl.ca:datasets/fullbody-totalsegmentator-ct
+    mask_suffix:  _label-body_dseg.nii.gz
+    region:       mixed
+    spinal_cord_label_index: 83
 
   # ── GitHub (spine-generic) ───────────────────────────────────────────────────
   - name: data-multi-subject
@@ -181,6 +205,7 @@ datasets:
     url_ssh:   git@github.com:spine-generic/data-multi-subject.git
     mask_suffix:  _label-SC_seg.nii.gz
     region:       cervical
+    multi_site:   true
 
   # ── spineimage.ca (Gitea SSH) ────────────────────────────────────────────────
   - name: site_006
@@ -205,11 +230,4 @@ datasets:
     labels_dir: label
     img_glob: "*_bold.nii.gz"
     region: mixed
-
-  # ── Zenodo (téléchargement direct, pas git-annex) ────────────────────────────
-  - name: totalsegmentator
-    host: zenodo
-    url_https: https://zenodo.org/records/10047292
-    url_ssh: null
-    mask_suffix: _label-SC_seg.nii.gz
-    region: mixed
+    multi_site: true
