@@ -3,7 +3,8 @@ Convert the MSD dataset (from build_msd_dataset.py) into 2D axial slices with YO
 
 For each (image, label) pair of the MSD json:
     1. 4D images (e.g. DWI, fMRI) are averaged over time into a 3D image
-    2. Reorient image and label to LAS (axis permutation/flip, no interpolation)
+    2. Keep only the largest connected component of the SC mask, then reorient image and label to LAS
+       (axis permutation/flip, no interpolation)
     3. Resample to 1 x 1 x 10 mm (RL x AP x SI): linear for the image, nearest neighbour for the SC mask
     4. Cut axial slices, from Superior (slice_000) to Inferior.
        Slice = data[:, :, z].T[::-1, :] → row 0 = Anterior, column 0 = patient Right
@@ -19,8 +20,8 @@ Outputs (YOLO layout, in OUTPUT_FOLDER):
     images/<split>/<dataset>__<image name>__slice_NNN.png
     labels/<split>/<dataset>__<image name>__slice_NNN.txt
     dataset.yaml : YOLO (ultralytics) dataset config
-    build_yolo_dataset.log : images that could not be processed, and warnings (still processed):
-                             SC masks not made of one connected component, labels not on the image grid
+    build_yolo_dataset.log : images that could not be processed, and SC masks with several connected
+                             components (only the largest one was kept)
 
 Usage:
     python build_yolo_dataset.py --msd <dataset_msd_YYYYMMDD.json> --output-dir <output_folder> [--rgb]
@@ -101,26 +102,22 @@ def yolo_bbox(mask_slice):
 
 def process_entry(entry, output_dir, rgb, warnings):
     """Write the png slices and YOLO label files of one MSD entry. Return the number of slices.
-    SC masks that are not one connected component or not on the image grid are added to `warnings`
-    (but still processed)."""
+    SC masks with several connected components are added to `warnings`."""
     img = reorient_to_las(to_3d(nib.load(entry["image"])))
     label = nib.load(entry["label"])
     # Keep only the SC (multi-class labels: SC = voxels equal to sc_label_value)
     sc = (np.asarray(label.dataobj) == entry["sc_label_value"]).astype(np.uint8)
 
-    # The SC should be one connected component (voxels touching by a face, edge or corner)
-    _, n_components = ndimage.label(sc, structure=np.ones((3,) * sc.ndim))
-    if n_components != 1:
-        warnings.append(f"{entry['label']}: {n_components} SC connected components")
+    # Keep only the largest connected component of the SC (voxels touching by a face, edge or corner)
+    components, n_components = ndimage.label(sc, structure=np.ones((3,) * sc.ndim))
+    if n_components > 1:
+        sizes = np.bincount(components.ravel())[1:]   # [1:] skips the background
+        sc = (components == np.argmax(sizes) + 1).astype(np.uint8)
+        warnings.append(f"{entry['label']}: {n_components} SC connected components, kept the largest")
 
     mask = reorient_to_las(nib.Nifti1Image(sc, label.affine))
 
-    # Image and SC mask should be on the same grid (same shape and affine)
-    if img.shape[:3] != mask.shape[:3]:
-        warnings.append(f"{entry['label']}: image and label shapes differ ({img.shape[:3]} vs {mask.shape[:3]})")
-    elif not np.allclose(img.affine, mask.affine, atol=1e-3):
-        warnings.append(f"{entry['label']}: image and label affines differ")
-
+    # Image and mask are on the same grid (checked by build_msd_dataset.py), so are their resampled versions
     img_data = normalize(resample_from_to(img, target_grid(img, VOXEL_SIZE), order=1).get_fdata(dtype=np.float32))
     mask_data = resample_from_to(mask, target_grid(mask, VOXEL_SIZE), order=0).get_fdata() > 0.5
 
