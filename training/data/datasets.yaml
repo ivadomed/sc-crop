@@ -28,13 +28,6 @@
 datasets:
 
   # ── data.neuro.polymtl.ca ────────────────────────────────────────────────────
-  - name: basel-mp2rage
-    host: neuro
-    url_https: https://data.neuro.polymtl.ca/datasets/basel-mp2rage
-    url_ssh:   git@data.neuro.polymtl.ca:datasets/basel-mp2rage
-    mask_suffix: _label-SC_seg.nii.gz
-    region:      cervical
-
   - name: beijing-tumor
     host: neuro
     url_https: https://data.neuro.polymtl.ca/datasets/beijing-tumor
@@ -49,6 +42,7 @@ datasets:
     mask_suffix: _label-SC_seg.nii.gz
     region:      cervical
     multi_site:  true
+    exclude_suffixes: [_T2w_label-SC_seg.nii.gz]   # T2w scans are not used
 
   - name: dcm-brno
     host: neuro
