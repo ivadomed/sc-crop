@@ -121,6 +121,19 @@ def get_image_metadata(image_path, contrast):
             "orientation": orientation, "field_strength": field_strength}
 
 
+def check_label(image_path, label_path, sc_label_value):
+    """Return why a label can't be used with its image, or None if it is fine."""
+    img, label = nib.load(image_path), nib.load(label_path)
+    if img.shape[:3] != label.shape[:3]:
+        return f"image and label shapes differ ({img.shape[:3]} vs {label.shape[:3]})"
+    if not np.allclose(img.affine, label.affine, atol=1e-3):
+        return "image and label affines differ"
+    # Loads the label data: an empty SC mask has 0 connected components
+    if not (np.asarray(label.dataobj) == sc_label_value).any():
+        return "empty SC mask (0 connected components)"
+    return None
+
+
 def collect_dataset(cfg, data_dir, skipped):
     """Return one MSD entry per SC segmentation of a dataset. Problems are appended to `skipped`."""
     name = cfg["name"]
@@ -154,10 +167,15 @@ def collect_dataset(cfg, data_dir, skipped):
         # BIDS suffix of the image: sub-01_acq-sag_T2w.nii.gz → T2w
         # (motion-corrected images: sub-101_run-1_dwi_moco.nii.gz → dwi)
         contrast = image.name.removesuffix(".nii.gz").removesuffix("_moco").split("_")[-1]
+        sc_label_value = cfg.get("spinal_cord_label_index", 1)
         try:
+            problem = check_label(image, mask, sc_label_value)
             metadata = get_image_metadata(image, contrast)
-        except Exception as e:   # corrupted or partially downloaded image
-            skipped.append(f"{name}: could not read {image} ({e})")
+        except Exception as e:   # corrupted or partially downloaded image or label
+            skipped.append(f"{name}: could not read {image} or {mask} ({e})")
+            continue
+        if problem:
+            skipped.append(f"{name}: {problem}: {mask}")
             continue
 
         entries.append({
@@ -170,7 +188,7 @@ def collect_dataset(cfg, data_dir, skipped):
             "contrast": contrast,
             "region": cfg.get("region"),
             # Value of the SC in the label: 1 for binary masks, the SC index for multi-class masks
-            "sc_label_value": cfg.get("spinal_cord_label_index", 1),
+            "sc_label_value": sc_label_value,
             **metadata,
         })
     return entries
