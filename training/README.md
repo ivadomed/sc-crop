@@ -31,4 +31,4 @@ In order of use:
 - `data/download_all_datasets.sh`: clones (or updates) every dataset of `datasets.yaml`, downloads their git-annex files and logs the version (branch and commit) of each dataset.
 - `data/build_msd_dataset.py`: gathers every SC segmentation with its image and metadata in an MSD json. Skips empty masks and labels with different affine from image, splits the subjects of each dataset 60/20/20 into training/validation/test and logs statistics.
 - `data/build_yolo_dataset.py`: converts the MSD json into 2D axial slices (LAS, 1 x 1 x 10 mm, grayscale or pseudo-RGB with `--rgb`) with one YOLO bounding box file per slice, keeping only the largest SC component.
-- `train_detection.py`: trains the YOLO model detecting the SC on the slices, with optional MRI-specific augmentations and Weights & Biases logging.
+- `train_detection.py`: trains the YOLO model detecting the SC on the slices.
