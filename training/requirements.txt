@@ -7,3 +7,5 @@ pillow==12.3.0
 # Detection training
 ultralytics==8.4.192
 opencv-python==5.0.0.93
+# Evaluation plots
+matplotlib==3.10.9
