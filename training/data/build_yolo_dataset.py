@@ -16,6 +16,8 @@ For each (image, label) pair of the MSD json:
     7. Save the SC bounding box of each slice in YOLO format: "0 cx cy w h" (normalized to [0, 1]).
        The text file is empty when the slice has no SC.
 
+Entries without SC label (canal-only datasets, e.g. CT) are ignored.
+
 Outputs (YOLO layout, in OUTPUT_FOLDER):
     images/<split>/<dataset>__<image name>__slice_NNN.png
     labels/<split>/<dataset>__<image name>__slice_NNN.txt
@@ -44,7 +46,7 @@ from scipy import ndimage
 VOXEL_SIZE = (1.0, 1.0, 10.0)
 # Intensity percentiles used for the normalization
 PERCENTILES = (0.5, 99.5)
-SPLITS = ("training", "validation", "test")
+SPLITS = ("training", "validation", "test", "external_test")
 
 
 def get_parser():
@@ -156,6 +158,8 @@ def main():
         n_slices = 0
         for i, entry in enumerate(entries, 1):
             print(f"[{split} {i}/{len(entries)}] {entry['image']}")
+            if entry["label"] is None:   # canal-only datasets (e.g. CT, SC not visible): not used for the SC
+                continue
             try:
                 n_slices += process_entry(entry, output_dir, args.rgb, warnings)
             except Exception as e:   # corrupted image, label not matching the image, ...
@@ -164,7 +168,7 @@ def main():
 
     # YOLO (ultralytics) dataset config
     yolo_cfg = {"path": str(output_dir), "train": "images/training", "val": "images/validation",
-                "test": "images/test", "names": {0: "spinal_cord"}}
+                "test": "images/test", "external_test": "images/external_test", "names": {0: "spinal_cord"}}
     (output_dir / "dataset.yaml").write_text(yaml.safe_dump(yolo_cfg, sort_keys=False))
 
     log_path = output_dir / "build_yolo_dataset.log"
