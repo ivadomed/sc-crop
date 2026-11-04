@@ -7,9 +7,18 @@ dataset, subject, site, pathology, contrast, resolution, image shape, acquisitio
 orientation (axial/sagittal/coronal), field strength, region and the value of the SC in the label
 (sc_label_value: 1 for binary masks, spinal_cord_label_index from datasets.yaml for multi-class masks).
 
+External test datasets (external_test: true in datasets.yaml) are not split: all their images go to the
+external_test split. Only their images with both an SC segmentation and a gold canal segmentation
+(canal_suffix, next to the SC mask) are kept, and the canal segmentation is stored in the "canal" field.
+
+Canal-only datasets (canal_label_index in datasets.yaml, e.g. CT where the SC is not visible) have no SC
+label: their entries have "label" and "sc_label_value" set to None, and their mask is stored in the "canal"
+field with the value of the canal in "canal_label_value".
+
 Outputs (in OUTPUT_FOLDER):
     - sc_seg_msd_<YYYYMMDD>.json : the MSD dataset (absolute paths to images and labels), split into
                                    training/validation/test (60/20/20% of the subjects of each dataset)
+                                   and external_test (external test datasets)
     - sc_seg_msd_<YYYYMMDD>.log  : statistics of the dataset and list of skipped segmentations
 
 Usage:
@@ -43,6 +52,8 @@ PLANE_FROM_AXIS = {"R": "sagittal", "L": "sagittal", "A": "coronal", "P": "coron
 # Fraction of subjects of each dataset in each split, and seed of the shuffle (for reproducibility)
 SPLITS = {"training": 0.6, "validation": 0.2, "test": 0.2}
 SEED = 42
+# Split of the external test datasets (not split into training/validation/test)
+EXTERNAL_SPLIT = "external_test"
 
 
 def get_parser():
@@ -121,16 +132,16 @@ def get_image_metadata(image_path, contrast):
             "orientation": orientation, "field_strength": field_strength}
 
 
-def check_label(image_path, label_path, sc_label_value):
+def check_label(image_path, label_path, label_value, structure="SC"):
     """Return why a label can't be used with its image, or None if it is fine."""
     img, label = nib.load(image_path), nib.load(label_path)
     if img.shape[:3] != label.shape[:3]:
         return f"image and label shapes differ ({img.shape[:3]} vs {label.shape[:3]})"
     if not np.allclose(img.affine, label.affine, atol=1e-3):
         return "image and label affines differ"
-    # Loads the label data: an empty SC mask has 0 connected components
-    if not (np.asarray(label.dataobj) == sc_label_value).any():
-        return "empty SC mask (0 connected components)"
+    # Loads the label data: an empty mask has 0 connected components
+    if not (np.asarray(label.dataobj) == label_value).any():
+        return f"empty {structure} mask (0 connected components)"
     return None
 
 
@@ -168,8 +179,13 @@ def collect_dataset(cfg, data_dir, skipped):
         # (motion-corrected images: sub-101_run-1_dwi_moco.nii.gz → dwi)
         contrast = image.name.removesuffix(".nii.gz").removesuffix("_moco").split("_")[-1]
         sc_label_value = cfg.get("spinal_cord_label_index", 1)
+        # Canal-only datasets (e.g. CT, SC not visible): the mask contains the canal, not the SC
+        canal_label_index = cfg.get("canal_label_index")
         try:
-            problem = check_label(image, mask, sc_label_value)
+            if canal_label_index:
+                problem = check_label(image, mask, canal_label_index, "canal")
+            else:
+                problem = check_label(image, mask, sc_label_value)
             metadata = get_image_metadata(image, contrast)
         except Exception as e:   # corrupted or partially downloaded image or label
             skipped.append(f"{name}: could not read {image} or {mask} ({e})")
@@ -178,9 +194,29 @@ def collect_dataset(cfg, data_dir, skipped):
             skipped.append(f"{name}: {problem}: {mask}")
             continue
 
+        # External test datasets: the image must also have a gold canal segmentation
+        extra = {}
+        if cfg.get("external_test"):
+            canal = mask.parent / mask.name.replace(cfg["mask_suffix"], cfg["canal_suffix"])
+            if not canal.exists():
+                skipped.append(f"{name}: no gold canal segmentation for {mask}")
+                continue
+            try:
+                problem = check_label(image, canal, 1, "canal")
+            except Exception as e:   # corrupted or partially downloaded canal mask
+                skipped.append(f"{name}: could not read {canal} ({e})")
+                continue
+            if problem:
+                skipped.append(f"{name}: {problem}: {canal}")
+                continue
+            extra = {"canal": str(canal), "split": EXTERNAL_SPLIT}
+        elif canal_label_index:
+            # No SC label: the mask is only used as gold canal segmentation
+            extra = {"canal": str(mask), "canal_label_value": canal_label_index}
+
         entries.append({
             "image": str(image),
-            "label": str(mask),
+            "label": None if canal_label_index else str(mask),
             "dataset": name,
             "subject": subject,
             "site": get_site(subject, name, cfg.get("multi_site", False)),
@@ -188,15 +224,18 @@ def collect_dataset(cfg, data_dir, skipped):
             "contrast": contrast,
             "region": cfg.get("region"),
             # Value of the SC in the label: 1 for binary masks, the SC index for multi-class masks
-            "sc_label_value": sc_label_value,
+            "sc_label_value": None if canal_label_index else sc_label_value,
             **metadata,
+            **extra,
         })
     return entries
 
 
 def split_subjects(entries):
     """Set entry["split"] to training/validation/test, at the subject level: all images of a subject are
-    in the same split. Subjects are split 60/20/20 within each dataset so every dataset is in every split."""
+    in the same split. Subjects are split 60/20/20 within each dataset so every dataset is in every split.
+    Entries of external test datasets already have their split (external_test) and are left as they are."""
+    entries = [e for e in entries if "split" not in e]
     subjects = defaultdict(set)
     for e in entries:
         subjects[e["dataset"]].add(e["subject"])
@@ -223,7 +262,7 @@ def format_stats(entries, skipped):
 
     # Split sizes, in subjects and in segmentations
     lines.append("--- Per split ---")
-    for split in SPLITS:
+    for split in [*SPLITS, EXTERNAL_SPLIT]:
         split_entries = [e for e in entries if e["split"] == split]
         n_subjects = len({(e["dataset"], e["subject"]) for e in split_entries})
         lines.append(f"  {split:<12} {n_subjects} subjects, {len(split_entries)} segmentations")
@@ -286,7 +325,8 @@ def main():
         "numTraining": sum(e["split"] == "training" for e in entries),
         "numValidation": sum(e["split"] == "validation" for e in entries),
         "numTest": sum(e["split"] == "test" for e in entries),
-        **{split: [e for e in entries if e["split"] == split] for split in SPLITS},
+        "numExternalTest": sum(e["split"] == EXTERNAL_SPLIT for e in entries),
+        **{split: [e for e in entries if e["split"] == split] for split in [*SPLITS, EXTERNAL_SPLIT]},
     }
     json_path = args.output_dir / f"dataset_msd_{today}.json"
     json_path.write_text(json.dumps(msd, indent=4))
