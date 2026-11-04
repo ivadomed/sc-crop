@@ -19,7 +19,10 @@
 #                  (e.g. [_label-canal_seg.nii.gz] when mask_suffix is _seg.nii.gz). Default: [].
 #   image_dirs   : extra folders (relative to the dataset) where images are looked for when they are
 #                  not in the raw data (e.g. [derivatives/motion_correction] for moco images). Default: [].
-#   (out-of-domain test-only datasets are specified in configs/training_dataset.yaml → test_datasets)
+#   external_test : true for datasets only used for external testing (all subjects in the external_test
+#                  split). Only images with both an SC segmentation and a gold canal segmentation are used.
+#                  Default: false.
+#   canal_suffix : gold canal mask filename suffix, next to the SC mask (required if external_test).
 #
 # spineimage datasets are cloned via SSH (Gitea) — requires SSH key access to spineimage.ca.
 #
@@ -52,6 +55,8 @@ datasets:
     url_ssh:   git@data.neuro.polymtl.ca:datasets/dcm-oklahoma
     mask_suffix: _label-SC_seg.nii.gz
     region:      cervical
+    external_test: true
+    canal_suffix:  _label-canal_seg.nii.gz
 
   - name: dcm-zurich-lesions-20231115
     host: neuro
@@ -73,6 +78,8 @@ datasets:
     url_ssh:   git@data.neuro.polymtl.ca:datasets/dcm-zurich
     mask_suffix: _label-SC_seg.nii.gz
     region:      cervical
+    external_test: true
+    canal_suffix:  _label-canal_seg.nii.gz
 
   - name: fullbody-totalsegmentator-ct
     host: neuro
@@ -103,6 +110,8 @@ datasets:
     url_ssh:   git@data.neuro.polymtl.ca:datasets/hc-lumbar-shanghai
     mask_suffix: _label-SC_seg.nii.gz
     region:      lumbar
+    external_test: true
+    canal_suffix:  _label-canal_seg.nii.gz
 
   - name: head-neck-tumor-challenge-2024
     host: neuro
@@ -184,6 +193,8 @@ datasets:
     url_ssh:   git@data.neuro.polymtl.ca:datasets/spider-challenge-2023
     mask_suffix:  _label-SC_seg.nii.gz
     region:       lumbar
+    external_test: true
+    canal_suffix:  _label-canal_seg.nii.gz
 
   - name: whole-spine
     host: neuro
