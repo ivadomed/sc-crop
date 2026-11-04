@@ -61,7 +61,7 @@ def get_parser():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model", required=True, type=Path, help="Model weights (e.g. checkpoints/weights/best.pt).")
     parser.add_argument("--dataset", required=True, type=Path, help="dataset.yaml built by build_yolo_dataset.py.")
-    parser.add_argument("--split", default="test", choices=["training", "validation", "test"])
+    parser.add_argument("--split", default="test", choices=["training", "validation", "test", "external_test"])
     parser.add_argument("--output-dir", required=True, type=Path, help="Results are saved in <output-dir>/<split>/.")
     parser.add_argument("--conf", type=float, default=0.25, help="Minimum confidence of a predicted box.")
     parser.add_argument("--imgsz", type=int, default=None, help="Image size (default: the one used for training).")
