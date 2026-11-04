@@ -28,13 +28,6 @@
 datasets:
 
   # ── data.neuro.polymtl.ca ────────────────────────────────────────────────────
-  - name: beijing-tumor
-    host: neuro
-    url_https: https://data.neuro.polymtl.ca/datasets/beijing-tumor
-    url_ssh:   git@data.neuro.polymtl.ca:datasets/beijing-tumor
-    mask_suffix: _sc-mask.nii.gz
-    region:      null
-
   - name: canproco
     host: neuro
     url_https: https://data.neuro.polymtl.ca/datasets/canproco
