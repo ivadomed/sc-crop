@@ -23,6 +23,9 @@
 #                  split). Only images with both an SC segmentation and a gold canal segmentation are used.
 #                  Default: false.
 #   canal_suffix : gold canal mask filename suffix, next to the SC mask (required if external_test).
+#   canal_label_index : for datasets without SC segmentation (e.g. CT, where the SC is not visible): value
+#                  of the canal in the multi-class masks of mask_suffix. Their images are only used for the
+#                  canal (no SC box). Default: null.
 #
 # spineimage datasets are cloned via SSH (Gitea) — requires SSH key access to spineimage.ca.
 #
@@ -87,7 +90,7 @@ datasets:
     url_ssh:   git@data.neuro.polymtl.ca:datasets/fullbody-totalsegmentator-ct
     mask_suffix:  _label-body_dseg.nii.gz
     region:       mixed
-    spinal_cord_label_index: 83
+    canal_label_index: 83   # no SC segmentation (SC not visible on CT), only the canal
 
   - name: fullbody-totalsegmentator-mri
     host: neuro
