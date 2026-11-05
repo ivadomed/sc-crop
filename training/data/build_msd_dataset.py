@@ -156,10 +156,11 @@ def collect_dataset(cfg, data_dir, skipped):
         skipped.append(f"{name}: no folder {labels_root}")
         return []
 
-    # Pathology of each subject, from participants.tsv
+    # Pathology of each subject, from participants.tsv, else the pathology of the dataset (datasets.yaml)
     pathologies = read_pathologies(dataset_root)
+    default_pathology = cfg.get("pathology", "unknown")
     if not pathologies:
-        skipped.append(f"{name}: no pathology in participants.tsv, set to unknown")
+        skipped.append(f"{name}: no pathology in participants.tsv, set to {default_pathology}")
 
     entries = []
     for mask in sorted(labels_root.rglob(f"*{cfg['mask_suffix']}")):
@@ -225,7 +226,7 @@ def collect_dataset(cfg, data_dir, skipped):
             "dataset": name,
             "subject": subject,
             "site": get_site(subject, name, cfg.get("multi_site", False)),
-            "pathology": pathologies.get(subject, "unknown"),
+            "pathology": pathologies.get(subject, default_pathology),
             "contrast": contrast,
             "region": cfg.get("region"),
             # Value of the SC in the label: 1 for binary masks, the SC index for multi-class masks

@@ -26,6 +26,8 @@
 #   canal_ignore_affine : true to accept gold canal masks whose affine differs from the image (same shape
 #                  required). The canal is then considered to be on the image grid. Default: false.
 #   sc_ignore_affine : same for the SC masks. Default: false.
+#   pathology    : pathology of the subjects missing from participants.tsv (e.g. no pathology column).
+#                  Default: unknown.
 #   canal_label_index : for datasets without SC segmentation (e.g. CT, where the SC is not visible): value
 #                  of the canal in the multi-class masks of mask_suffix. Their images are only used for the
 #                  canal (no SC box). Default: null.
@@ -229,6 +231,7 @@ datasets:
     url_ssh:   gitea@spineimage.ca:MON/site_006.git
     mask_suffix: _label-SC_seg.nii.gz
     region:      cervical
+    pathology:   DCM
 
   - name: site_007
     host: spineimage
@@ -236,6 +239,7 @@ datasets:
     url_ssh:   gitea@spineimage.ca:VGH/site_007.git
     mask_suffix: _label-SC_seg.nii.gz
     region:      cervical
+    pathology:   DCM
 
   - name: ds005143
     host: OpenNeuroDatasets
