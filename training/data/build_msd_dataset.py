@@ -1,30 +1,22 @@
 """
-Aggregate all spinal cord (SC) segmentations of the datasets listed in datasets.yaml into a single
+Aggregate all spinal cord (SC) and canal segmentations of the datasets listed in datasets.yaml into a single
 MSD-style json file.
 
-For each SC segmentation, the json stores the image, the label and the following metadata:
+For each dataset: SC and/or canal segmentations are aggregated. The json stores the image, the labels and the following metadata:
 dataset, subject, site, pathology, contrast, resolution, image shape, acquisition (2D/3D),
-orientation (axial/sagittal/coronal), field strength, region and the value of the SC in the label
-(sc_label_value: 1 for binary masks, spinal_cord_label_index from datasets.yaml for multi-class masks).
+orientation (axial/sagittal/coronal), field strength, region and the value of the SC in the label.
 
-External test datasets (external_test: true in datasets.yaml) are not split: all their images go to the
-external_test split. Only their images with both an SC segmentation and a gold canal segmentation
-(canal_suffix, next to the SC mask) are kept, and the canal segmentation is stored in the "canal" field.
-With canal_ignore_affine, canal masks with a different affine from the image are accepted ("canal_ignore_affine"
-field: the canal is then considered to be on the image grid). Same for the SC masks with sc_ignore_affine.
+External test datasets are not split: all their images go to the external_test split.
+Only their images with both an SC segmentation and a gold canal segmentation are kept.
+With canal_ignore_affine, canal masks with a different affine from the image are accepted. Same for the SC masks with sc_ignore_affine.
 
-Canal-only datasets (canal_label_index in datasets.yaml, e.g. CT where the SC is not visible) have no SC
-label: their entries have "label" and "sc_label_value" set to None, and their mask is stored in the "canal"
-field with the value of the canal in "canal_label_value".
+Canal-only datasets (e.g. CT where the SC is not visible) have no SC label.
 
 Outputs (in OUTPUT_FOLDER):
     - sc_seg_msd_<YYYYMMDD>.json : the MSD dataset (absolute paths to images and labels), split into
                                    training/validation/test (60/20/20% of the subjects of each dataset)
                                    and external_test (external test datasets)
     - sc_seg_msd_<YYYYMMDD>.log  : statistics of the dataset and list of skipped segmentations
-
-Usage:
-    python build_msd_dataset.py --data-dir <folder with all datasets> --output-dir <output_folder>
 
 The data folder is the output folder of download_all_datasets.sh.
 
