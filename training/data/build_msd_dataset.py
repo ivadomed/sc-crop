@@ -10,6 +10,8 @@ orientation (axial/sagittal/coronal), field strength, region and the value of th
 External test datasets (external_test: true in datasets.yaml) are not split: all their images go to the
 external_test split. Only their images with both an SC segmentation and a gold canal segmentation
 (canal_suffix, next to the SC mask) are kept, and the canal segmentation is stored in the "canal" field.
+With canal_ignore_affine, canal masks with a different affine from the image are accepted ("canal_ignore_affine"
+field: the canal is then considered to be on the image grid). Same for the SC masks with sc_ignore_affine.
 
 Canal-only datasets (canal_label_index in datasets.yaml, e.g. CT where the SC is not visible) have no SC
 label: their entries have "label" and "sc_label_value" set to None, and their mask is stored in the "canal"
@@ -132,12 +134,12 @@ def get_image_metadata(image_path, contrast):
             "orientation": orientation, "field_strength": field_strength}
 
 
-def check_label(image_path, label_path, label_value, structure="SC"):
+def check_label(image_path, label_path, label_value, structure="SC", check_affine=True):
     """Return why a label can't be used with its image, or None if it is fine."""
     img, label = nib.load(image_path), nib.load(label_path)
     if img.shape[:3] != label.shape[:3]:
         return f"image and label shapes differ ({img.shape[:3]} vs {label.shape[:3]})"
-    if not np.allclose(img.affine, label.affine, atol=1e-3):
+    if check_affine and not np.allclose(img.affine, label.affine, atol=1e-3):
         return "image and label affines differ"
     # Loads the label data: an empty mask has 0 connected components
     if not (np.asarray(label.dataobj) == label_value).any():
@@ -185,7 +187,8 @@ def collect_dataset(cfg, data_dir, skipped):
             if canal_label_index:
                 problem = check_label(image, mask, canal_label_index, "canal")
             else:
-                problem = check_label(image, mask, sc_label_value)
+                # Some datasets have SC masks with a different affine from the image (sc_ignore_affine)
+                problem = check_label(image, mask, sc_label_value, "SC", not cfg.get("sc_ignore_affine", False))
             metadata = get_image_metadata(image, contrast)
         except Exception as e:   # corrupted or partially downloaded image or label
             skipped.append(f"{name}: could not read {image} or {mask} ({e})")
@@ -202,14 +205,16 @@ def collect_dataset(cfg, data_dir, skipped):
                 skipped.append(f"{name}: no gold canal segmentation for {mask}")
                 continue
             try:
-                problem = check_label(image, canal, 1, "canal")
+                # Some datasets have canal masks with a different affine from the image (canal_ignore_affine)
+                problem = check_label(image, canal, 1, "canal", not cfg.get("canal_ignore_affine", False))
             except Exception as e:   # corrupted or partially downloaded canal mask
                 skipped.append(f"{name}: could not read {canal} ({e})")
                 continue
             if problem:
                 skipped.append(f"{name}: {problem}: {canal}")
                 continue
-            extra = {"canal": str(canal), "split": EXTERNAL_SPLIT}
+            extra = {"canal": str(canal), "split": EXTERNAL_SPLIT,
+                     "canal_ignore_affine": cfg.get("canal_ignore_affine", False)}
         elif canal_label_index:
             # No SC label: the mask is only used as gold canal segmentation
             extra = {"canal": str(mask), "canal_label_value": canal_label_index}
@@ -225,6 +230,8 @@ def collect_dataset(cfg, data_dir, skipped):
             "region": cfg.get("region"),
             # Value of the SC in the label: 1 for binary masks, the SC index for multi-class masks
             "sc_label_value": None if canal_label_index else sc_label_value,
+            # True if the SC mask has a different affine from the image (it is then on the image grid)
+            "sc_ignore_affine": cfg.get("sc_ignore_affine", False),
             **metadata,
             **extra,
         })
@@ -256,7 +263,8 @@ def split_subjects(entries):
 
 def format_stats(entries, skipped):
     """Return the dataset statistics as a text block."""
-    lines = [f"Number of SC segmentations (without skipped) : {len(entries)}",
+    lines = [f"Number of SC segmentations (without skipped) : {sum(e['label'] is not None for e in entries)}",
+             f"Number of gold canal segmentations (without skipped) : {sum(bool(e.get('canal')) for e in entries)}",
              f"Number of subjects (without skipped) : {len({(e['dataset'], e['subject']) for e in entries})}",
              f"Number of skipped segmentations/datasets: {len(skipped)}", ""]
 
@@ -272,6 +280,15 @@ def format_stats(entries, skipped):
         lines.append(f"--- Per {key} ---")
         for value, count in Counter(str(e[key]) for e in entries).most_common():
             lines.append(f"  {value:<40} {count}")
+        lines.append("")
+
+    # Gold canal segmentations (external test and canal-only datasets)
+    canal_counts = Counter(e["dataset"] for e in entries if e.get("canal"))
+    if canal_counts:
+        lines.append("--- Gold canal segmentations per dataset ---")
+        for dataset, count in sorted(canal_counts.items()):
+            n_sc = sum(e["dataset"] == dataset and e["label"] is not None for e in entries)
+            lines.append(f"  {dataset:<40} {count} canal, {n_sc} SC segmentations")
         lines.append("")
 
     # Sites per dataset (useful to check the multi-site parsing)
@@ -310,7 +327,10 @@ def main():
     for cfg in datasets:
         print(f"Processing {cfg['name']}...")
         dataset_entries = collect_dataset(cfg, data_dir, skipped)
-        print(f"  {len(dataset_entries)} SC segmentations")
+        print(f"  {sum(e['label'] is not None for e in dataset_entries)} SC segmentations")
+        # Datasets where gold canal segmentations are searched (external test and canal-only datasets)
+        if cfg.get("external_test") or cfg.get("canal_label_index"):
+            print(f"  {sum(bool(e.get('canal')) for e in dataset_entries)} canal segmentations")
         entries.extend(dataset_entries)
     split_subjects(entries)
 
