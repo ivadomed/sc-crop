@@ -11,9 +11,10 @@ as done for the SC segmentations) and their canal is segmented on that average a
 Predictions that already exist are not recomputed (unless --overwrite), so the script can be stopped and run again.
 Images that could not be segmented are listed in segment_canal.log in an output folder.
 Images where canal segmentation is empty are listed in segment_canal_empty.log in an output folder.
-A copy of the MSD json file is saved and for each image, the path of the predicted canal segmentation is added in the "canal" field.
-Images that already have a gold canal segmentation in the MSD json (canal-only datasets, e.g. CT) are not
-segmented and keep their gold canal.
+A copy of the MSD json file is saved and for each image, the path of the predicted (silver) canal segmentation
+is added in the "canal_silver" field.
+Images that already have a gold canal segmentation in the MSD json ("canal_seg": canal-only datasets, e.g. CT)
+and the external test set are not segmented: their "canal_silver" is None.
 
 With --part K N, only part K of the N parts of the images is segmented, so N jobs can run at the same time
 on different machines/GPUs without overlap. Their logs and json are suffixed with _part<K>. Once all parts
@@ -67,8 +68,9 @@ def main():
     splits = ("training", "validation", "test")
 
     # One segmentation per image (an image can have several entries).
-    # Images with a gold canal segmentation (canal-only datasets, e.g. CT) are not segmented.
-    images = sorted({(e["dataset"], e["image"]) for split in splits for e in msd[split] if not e.get("canal")})
+    # Images with a gold canal segmentation (canal-only datasets, e.g. CT) are not segmented, nor the
+    # external test set (not in `splits`).
+    images = sorted({(e["dataset"], e["image"]) for split in splits for e in msd[split] if not e["canal_seg"]})
     # Part K of N: images K, K + N, K + 2N, ... (each part has a mix of datasets)
     k, n = args.part
     images = images[k::n]
@@ -106,12 +108,11 @@ def main():
         if not np.asarray(nib.load(output).dataobj).any():
             empty.append(f"{image} → {output}")
 
-    # Copy of the MSD json with the predicted canal segmentation of each image (None if it failed).
-    # Gold canal segmentations are kept.
-    for split in splits:
-        for e in msd[split]:
-            if not e.get("canal"):
-                e["canal"] = canal_of.get(e["image"])
+    # Copy of the MSD json with the predicted (silver) canal segmentation of each image in "canal_silver"
+    # (None if it failed, and for the images with a gold canal segmentation and the external test set)
+    for split in [*splits, "external_test"]:
+        for e in msd.get(split, []):
+            e["canal_silver"] = None if e["canal_seg"] else canal_of.get(e["image"])
     json_path = args.output_dir / f"{args.msd.stem}_canal{suffix}.json"
     json_path.write_text(json.dumps(msd, indent=4))
 
