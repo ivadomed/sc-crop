@@ -106,7 +106,7 @@ def process_entry(entry, output_dir, rgb, warnings):
     """Write the png slices and YOLO label files of one MSD entry. Return the number of slices.
     SC masks with several connected components are added to `warnings`."""
     img = reorient_to_las(to_3d(nib.load(entry["image"])))
-    label = nib.load(entry["label"])
+    label = nib.load(entry["sc_seg"])
     # Keep only the SC (multi-class labels: SC = voxels equal to sc_label_value)
     sc = (np.asarray(label.dataobj) == entry["sc_label_value"]).astype(np.uint8)
 
@@ -115,7 +115,7 @@ def process_entry(entry, output_dir, rgb, warnings):
     if n_components > 1:
         sizes = np.bincount(components.ravel())[1:]   # [1:] skips the background
         sc = (components == np.argmax(sizes) + 1).astype(np.uint8)
-        warnings.append(f"{entry['label']}: {n_components} SC connected components, kept the largest")
+        warnings.append(f"{entry['sc_seg']}: {n_components} SC connected components, kept the largest")
 
     # SC masks with a wrong affine (sc_ignore_affine) are on the image grid: use the image affine
     sc_affine = nib.load(entry["image"]).affine if entry.get("sc_ignore_affine") else label.affine
@@ -160,7 +160,7 @@ def main():
         n_slices = 0
         for i, entry in enumerate(entries, 1):
             print(f"[{split} {i}/{len(entries)}] {entry['image']}")
-            if entry["label"] is None:   # canal-only datasets (e.g. CT, SC not visible): not used for the SC
+            if entry["sc_seg"] is None:   # canal-only datasets (e.g. CT, SC not visible): not used for the SC
                 continue
             try:
                 n_slices += process_entry(entry, output_dir, args.rgb, warnings)

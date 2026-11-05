@@ -15,7 +15,8 @@ Same processing as build_yolo_dataset.py, with the canal mask processed like the
        "0 cx cy w h" for the SC and "1 cx cy w h" for the canal (normalized to [0, 1]).
        The text file is empty when the slice has neither SC nor canal.
 
-Entries without canal prediction ("canal" field None: sct_deepseg failed) are skipped.
+The canal is the gold canal segmentation ("canal_seg") if there is one, else the silver one predicted by
+segment_canal.py ("canal_silver"). Entries with neither (e.g. sct_deepseg failed) are skipped.
 For the external_test split, the canal is the gold canal segmentation (from build_msd_dataset.py).
 Canal-only datasets (e.g. CT, where the SC is not visible) have no SC label: their slices only have a canal box,
 taken from the gold canal segmentation (voxels equal to "canal_label_value").
@@ -93,24 +94,26 @@ def process_entry(entry, output_dir, rgb, warnings, sc_outside):
     """Write the png slices and YOLO label files of one MSD entry. Return the number of slices.
     Images where more than MAX_SC_OUTSIDE_CANAL of the SC is outside the canal are added to `sc_outside`."""
     img = reorient_to_las(to_3d(nib.load(entry["image"])))
-    canal = nib.load(entry["canal"])
+    # Gold canal segmentation if there is one, else the silver one (predicted by segment_canal.py)
+    canal_path = entry["canal_seg"] or entry["canal_silver"]
+    canal = nib.load(canal_path)
     # Canal = voxels equal to canal_label_value (multi-class gold masks, e.g. CT), else non-zero voxels
     canal_value = entry.get("canal_label_value")
     canal_mask = np.asarray(canal.dataobj) == canal_value if canal_value else np.asarray(canal.dataobj) > 0
-    # Canal masks with a wrong affine (canal_ignore_affine) are on the image grid: use the image affine
+    # Gold canal masks with a wrong affine (canal_ignore_affine) are on the image grid: use the image affine
     canal_affine = nib.load(entry["image"]).affine if entry.get("canal_ignore_affine") else canal.affine
-    canal_data = prepare_mask(canal_mask, canal_affine, entry["canal"], warnings)
+    canal_data = prepare_mask(canal_mask, canal_affine, canal_path, warnings)
 
-    if entry["label"] is None:
+    if entry["sc_seg"] is None:
         # Canal-only datasets (e.g. CT, SC not visible): no SC box
         sc_data = np.zeros_like(canal_data)
     else:
         # SC = voxels equal to sc_label_value (multi-class labels)
-        label = nib.load(entry["label"])
+        label = nib.load(entry["sc_seg"])
         # SC masks with a wrong affine (sc_ignore_affine) are on the image grid: use the image affine
         sc_affine = nib.load(entry["image"]).affine if entry.get("sc_ignore_affine") else label.affine
         sc_data = prepare_mask((np.asarray(label.dataobj) == entry["sc_label_value"]), sc_affine,
-                               entry["label"], warnings)
+                               entry["sc_seg"], warnings)
         # The SC should be inside the canal (both masks are on the same 1 x 1 x 10 mm grid)
         outside = (sc_data & ~canal_data).sum() / max(sc_data.sum(), 1)
         if outside > MAX_SC_OUTSIDE_CANAL:
@@ -153,7 +156,7 @@ def main():
         n_slices = 0
         for i, entry in enumerate(entries, 1):
             print(f"[{split} {i}/{len(entries)}] {entry['image']}")
-            if not entry.get("canal"):
+            if not (entry["canal_seg"] or entry.get("canal_silver")):
                 skipped.append(entry["image"])
                 continue
             try:
