@@ -206,15 +206,17 @@ def collect_dataset(cfg, data_dir, skipped):
             if problem:
                 skipped.append(f"{name}: {problem}: {canal}")
                 continue
-            extra = {"canal": str(canal), "split": EXTERNAL_SPLIT,
+            extra = {"canal_seg": str(canal), "split": EXTERNAL_SPLIT,
                      "canal_ignore_affine": cfg.get("canal_ignore_affine", False)}
         elif canal_label_index:
             # No SC label: the mask is only used as gold canal segmentation
-            extra = {"canal": str(mask), "canal_label_value": canal_label_index}
+            extra = {"canal_seg": str(mask), "canal_label_value": canal_label_index}
 
         entries.append({
             "image": str(image),
-            "label": None if canal_label_index else str(mask),
+            "sc_seg": None if canal_label_index else str(mask),
+            # Gold canal segmentation (external test and canal-only datasets), else None
+            "canal_seg": None,
             "dataset": name,
             "subject": subject,
             "site": get_site(subject, name, cfg.get("multi_site", False)),
@@ -256,8 +258,8 @@ def split_subjects(entries):
 
 def format_stats(entries, skipped):
     """Return the dataset statistics as a text block."""
-    lines = [f"Number of SC segmentations (without skipped) : {sum(e['label'] is not None for e in entries)}",
-             f"Number of gold canal segmentations (without skipped) : {sum(bool(e.get('canal')) for e in entries)}",
+    lines = [f"Number of SC segmentations (without skipped) : {sum(e['sc_seg'] is not None for e in entries)}",
+             f"Number of gold canal segmentations (without skipped) : {sum(bool(e.get('canal_seg')) for e in entries)}",
              f"Number of subjects (without skipped) : {len({(e['dataset'], e['subject']) for e in entries})}",
              f"Number of skipped segmentations/datasets: {len(skipped)}", ""]
 
@@ -276,11 +278,11 @@ def format_stats(entries, skipped):
         lines.append("")
 
     # Gold canal segmentations (external test and canal-only datasets)
-    canal_counts = Counter(e["dataset"] for e in entries if e.get("canal"))
+    canal_counts = Counter(e["dataset"] for e in entries if e.get("canal_seg"))
     if canal_counts:
         lines.append("--- Gold canal segmentations per dataset ---")
         for dataset, count in sorted(canal_counts.items()):
-            n_sc = sum(e["dataset"] == dataset and e["label"] is not None for e in entries)
+            n_sc = sum(e["dataset"] == dataset and e["sc_seg"] is not None for e in entries)
             lines.append(f"  {dataset:<40} {count} canal, {n_sc} SC segmentations")
         lines.append("")
 
@@ -320,10 +322,10 @@ def main():
     for cfg in datasets:
         print(f"Processing {cfg['name']}...")
         dataset_entries = collect_dataset(cfg, data_dir, skipped)
-        print(f"  {sum(e['label'] is not None for e in dataset_entries)} SC segmentations")
+        print(f"  {sum(e['sc_seg'] is not None for e in dataset_entries)} SC segmentations")
         # Datasets where gold canal segmentations are searched (external test and canal-only datasets)
         if cfg.get("external_test") or cfg.get("canal_label_index"):
-            print(f"  {sum(bool(e.get('canal')) for e in dataset_entries)} canal segmentations")
+            print(f"  {sum(bool(e.get('canal_seg')) for e in dataset_entries)} canal segmentations")
         entries.extend(dataset_entries)
     split_subjects(entries)
 
