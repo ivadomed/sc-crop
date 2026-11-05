@@ -97,7 +97,9 @@ def process_entry(entry, output_dir, rgb, warnings, sc_outside):
     # Canal = voxels equal to canal_label_value (multi-class gold masks, e.g. CT), else non-zero voxels
     canal_value = entry.get("canal_label_value")
     canal_mask = np.asarray(canal.dataobj) == canal_value if canal_value else np.asarray(canal.dataobj) > 0
-    canal_data = prepare_mask(canal_mask, canal.affine, entry["canal"], warnings)
+    # Canal masks with a wrong affine (canal_ignore_affine) are on the image grid: use the image affine
+    canal_affine = nib.load(entry["image"]).affine if entry.get("canal_ignore_affine") else canal.affine
+    canal_data = prepare_mask(canal_mask, canal_affine, entry["canal"], warnings)
 
     if entry["label"] is None:
         # Canal-only datasets (e.g. CT, SC not visible): no SC box
@@ -105,7 +107,9 @@ def process_entry(entry, output_dir, rgb, warnings, sc_outside):
     else:
         # SC = voxels equal to sc_label_value (multi-class labels)
         label = nib.load(entry["label"])
-        sc_data = prepare_mask((np.asarray(label.dataobj) == entry["sc_label_value"]), label.affine,
+        # SC masks with a wrong affine (sc_ignore_affine) are on the image grid: use the image affine
+        sc_affine = nib.load(entry["image"]).affine if entry.get("sc_ignore_affine") else label.affine
+        sc_data = prepare_mask((np.asarray(label.dataobj) == entry["sc_label_value"]), sc_affine,
                                entry["label"], warnings)
         # The SC should be inside the canal (both masks are on the same 1 x 1 x 10 mm grid)
         outside = (sc_data & ~canal_data).sum() / max(sc_data.sum(), 1)

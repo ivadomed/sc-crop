@@ -117,7 +117,9 @@ def process_entry(entry, output_dir, rgb, warnings):
         sc = (components == np.argmax(sizes) + 1).astype(np.uint8)
         warnings.append(f"{entry['label']}: {n_components} SC connected components, kept the largest")
 
-    mask = reorient_to_las(nib.Nifti1Image(sc, label.affine))
+    # SC masks with a wrong affine (sc_ignore_affine) are on the image grid: use the image affine
+    sc_affine = nib.load(entry["image"]).affine if entry.get("sc_ignore_affine") else label.affine
+    mask = reorient_to_las(nib.Nifti1Image(sc, sc_affine))
 
     # Image and mask are on the same grid (checked by build_msd_dataset.py), so are their resampled versions
     img_data = normalize(resample_from_to(img, target_grid(img, VOXEL_SIZE), order=1).get_fdata(dtype=np.float32))
