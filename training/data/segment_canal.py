@@ -5,13 +5,11 @@ SCT (sct_deepseg canal, on GPU) and save the predictions in the derivatives of e
 Outputs (in each dataset of the data folder):
     derivatives/pred-canal-seg/<same path as the image>/<image name>_label-canal_seg.nii.gz
 
-sct_deepseg only accepts 3D images, so the dimensions of dwi and func images are checked: 4D images with a
-single volume (4th dimension = 1) are segmented on that volume and their canal is saved with the same shape
-as the image (with the 4th dimension), other 4D images are not segmented.
+sct_deepseg only accepts 3D images, so 4D dwi and func images are averaged over time (sct_maths -mean t,
+as done for the SC segmentations) and their canal is segmented on that average and saved in 3D.
 
-Predictions that already exist are not recomputed, so the script can be stopped and run again.
-Images that could not be segmented (including 4D images with several volumes) are listed in segment_canal.log
-in an output folder.
+Predictions that already exist are not recomputed (unless --overwrite), so the script can be stopped and run again.
+Images that could not be segmented are listed in segment_canal.log in an output folder.
 Images where canal segmentation is empty are listed in segment_canal_empty.log in an output folder.
 A copy of the MSD json file is saved and for each image, the path of the predicted canal segmentation is added in the "canal" field.
 Images that already have a gold canal segmentation in the MSD json (canal-only datasets, e.g. CT) are not
@@ -48,6 +46,8 @@ def get_parser():
     parser.add_argument("--part", type=int, nargs=2, default=(0, 1), metavar=("K", "N"),
                         help="Only segment part K of the N parts of the images (K = 0 ... N-1), to run N jobs "
                              "at the same time without overlap. Outputs are suffixed with _part<K>.")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Segment the canal again even if the prediction already exists.")
     return parser
 
 
@@ -82,20 +82,19 @@ def main():
     canal_of, failed, empty = {}, [], []   # {image: predicted canal segmentation}
     for i, (dataset, image) in enumerate(images, 1):
         output = get_output_path(Path(image), data_dir / dataset)
-        if output.exists():
+        if output.exists() and not args.overwrite:
             print(f"[{i}/{len(images)}] already done: {output}")
         else:
             print(f"[{i}/{len(images)}] {image}")
             with tempfile.TemporaryDirectory() as tmp_dir:
-                # dwi and func images can be 4D: keep the volume if there is only one, else report the image
+                # dwi and func images can be 4D: average over time (as done for the SC segmentations)
                 to_segment = image
-                if Path(image).parent.name in ("dwi", "func"):
-                    img = nib.load(image)
-                    if img.ndim == 4 and img.shape[3] == 1:
-                        to_segment = Path(tmp_dir) / Path(image).name
-                        nib.save(img.slicer[..., 0], to_segment)
-                    elif img.ndim == 4:
-                        failed.append(f"{image} (4D image with {img.shape[3]} volumes)")
+                if Path(image).parent.name in ("dwi", "func") and nib.load(image).ndim == 4:
+                    to_segment = Path(tmp_dir) / Path(image).name
+                    try:
+                        assert os.system(f"sct_maths -i {image} -mean t -o {to_segment}") == 0
+                    except AssertionError:
+                        failed.append(f"{image} (could not average the 4D image over time)")
                         continue
                 output.parent.mkdir(parents=True, exist_ok=True)
                 try:
@@ -103,11 +102,6 @@ def main():
                 except AssertionError:
                     failed.append(image)
                     continue
-                # Single volume 4D image: save the canal with the same shape as the image (add the 4th dimension)
-                if to_segment != image:
-                    canal = nib.load(output)
-                    nib.save(nib.Nifti1Image(np.asarray(canal.dataobj)[..., np.newaxis], canal.affine, canal.header),
-                             output)
         canal_of[image] = str(output)
         if not np.asarray(nib.load(output).dataobj).any():
             empty.append(f"{image} → {output}")
