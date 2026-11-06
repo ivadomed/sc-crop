@@ -1,34 +1,36 @@
 """
-Evaluate a YOLO spinal cord (SC) detection model on one split of the YOLO dataset built by
-data/build_yolo_dataset.py, with metrics that reflect what sc-crop needs: finding the SC on each slice
-and a 3D box around the whole SC.
+Evaluate a YOLO detection model of the spinal cord (SC) and of the spinal canal on one split of the YOLO
+dataset built by data/build_yolo_dataset.py, with metrics that reflect what sc-crop needs: finding each
+structure on each slice and a 3D box around it.
 
-Each slice has at most one SC box. The predicted box of a slice is its most confident box, if its
-confidence is >= --conf. Slices are at 1 x 1 mm in-plane, so 1 pixel = 1 mm.
+All metrics are computed separately for each class of the dataset (dataset.yaml "names": spinal_cord, canal).
+For each class, each slice has at most one GT box, and the predicted box of a slice is its most confident
+box of that class, if its confidence is >= --conf. Slices are at 1 x 1 mm in-plane, so 1 pixel = 1 mm.
 
-Metrics:
-    Slice level (is there SC on this slice?):
-        sensitivity : SC slices with a predicted box / SC slices
-        specificity : empty slices without predicted box / empty slices
-        precision   : slices with a predicted box that contain SC / slices with a predicted box
-    Box level, on SC slices (a missed SC slice counts as IoU = 0):
+Metrics (for each class, "structure" = SC or canal):
+    Slice level (is the structure on this slice?):
+        sensitivity : slices with the structure and a predicted box / slices with the structure
+        specificity : slices without the structure and without predicted box / slices without the structure
+        precision   : slices with a predicted box that contain the structure / slices with a predicted box
+    Box level, on slices with the structure (a missed slice counts as IoU = 0):
         IoU          : intersection over union of the predicted and ground truth (GT) boxes
-        IoU >= 0.5   : % of SC slices with a correctly placed box
-        center error : distance between the predicted and GT box centers (mm), on detected SC slices
-        GT coverage  : fraction of the GT box inside the predicted box, on detected SC slices
-                       (= fraction of the SC a crop around the predicted box would keep)
+        IoU >= 0.5   : % of slices with a correctly placed box
+        center error : distance between the predicted and GT box centers (mm), on detected slices
+        GT coverage  : fraction of the GT box inside the predicted box, on detected slices
+                       (= fraction of the structure a crop around the predicted box would keep)
     Volume level (the 3D box used to crop): union of the slice boxes, from the first to the last slice
-    with a box. On volumes with SC:
-        3D IoU, 3D GT coverage, and SI coverage (fraction of the GT SC slices inside the predicted range)
+    with a box. On volumes with the structure:
+        3D IoU, 3D GT coverage, and SI coverage (fraction of the GT slices inside the predicted range)
 
 Outputs (in OUTPUT_DIR/<split>/):
-    metrics.json  : all metrics, overall and per dataset
-    slices.csv    : results of each slice
-    volumes.csv   : results of each volume
-    summary.png   : plots of the metrics
-    worst_slices/ : the N worst slices (lowest IoU): image with the GT (green) and predicted (red) boxes
-    worst_volumes/: the N worst volumes (lowest 3D IoU): sagittal view at the center of the GT 3D box,
-                    with the GT (green) and predicted (red) 3D boxes
+    metrics.json          : all metrics of all classes, overall and per dataset
+    <class>/metrics.json  : metrics of the class, overall and per dataset
+    <class>/slices.csv    : results of each slice
+    <class>/volumes.csv   : results of each volume
+    <class>/summary.png   : plots of the metrics
+    <class>/worst_slices/ : the N worst slices (lowest IoU): image with the GT (green) and predicted (red) boxes
+    <class>/worst_volumes/: the N worst volumes (lowest 3D IoU): sagittal view at the center of the GT 3D box,
+                            with the GT (green) and predicted (red) 3D boxes
 
 Usage:
     python evaluate_detection.py --model <run_dir>/checkpoints/weights/best.pt \
@@ -53,11 +55,13 @@ from PIL import Image
 
 # Logger of YOLO: during training, its messages are also saved in the training log file
 LOGGER = logging.getLogger("ultralytics")
-OUTCOMES = ("TP", "FN", "FP", "TN")   # SC detected, SC missed, box on an empty slice, empty slice left empty
+# Structure detected, structure missed, box on a slice without the structure, slice without it left empty
+OUTCOMES = ("TP", "FN", "FP", "TN")
 
 
 def get_parser():
-    parser = argparse.ArgumentParser(description="Evaluate a YOLO SC detection model on one split of the dataset.",
+    parser = argparse.ArgumentParser(description="Evaluate a YOLO SC and canal detection model on one split of "
+                                                 "the dataset (metrics per class).",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model", required=True, type=Path, help="Model weights (e.g. checkpoints/weights/best.pt).")
     parser.add_argument("--dataset", required=True, type=Path, help="dataset.yaml built by build_yolo_dataset.py.")
@@ -72,13 +76,18 @@ def get_parser():
 
 # ── Boxes ─────────────────────────────────────────────────────────────────────
 
-def read_gt_box(label_path, width, height):
-    """Return the GT box (x1, y1, x2, y2) in pixels from a YOLO label file, or None if the slice has no SC."""
-    values = label_path.read_text().split() if label_path.exists() else []
-    if not values:
-        return None
-    cx, cy, w, h = (float(v) for v in values[1:5])
-    return ((cx - w / 2) * width, (cy - h / 2) * height, (cx + w / 2) * width, (cy + h / 2) * height)
+def read_gt_boxes(label_path, width, height):
+    """Return {class: GT box (x1, y1, x2, y2) in pixels} from a YOLO label file ("cls cx cy w h" lines);
+    classes absent from the slice are not in the dict."""
+    boxes = {}
+    lines = label_path.read_text().splitlines() if label_path.exists() else []
+    for line in lines:
+        if not line.strip():
+            continue
+        cls, cx, cy, w, h = line.split()[:5]
+        cx, cy, w, h = float(cx), float(cy), float(w), float(h)
+        boxes[int(cls)] = ((cx - w / 2) * width, (cy - h / 2) * height, (cx + w / 2) * width, (cy + h / 2) * height)
+    return boxes
 
 
 def area(box):
@@ -92,45 +101,47 @@ def intersection(a, b):
 # ── Predictions and metrics ───────────────────────────────────────────────────
 
 def predict(model, images_dir, conf, imgsz, device):
-    """Return {image name: ((x1, y1, x2, y2), confidence)} with the most confident box of each image of
-    `images_dir`, or None for images without box."""
+    """Return {image name: {class: ((x1, y1, x2, y2), confidence)}} with the most confident box of each class
+    of each image of `images_dir` (classes without box are not in the dict)."""
     preds = {}
     # The source must be the folder, not a list of paths: YOLO loads a list in memory as one single batch
     results = model.predict(source=str(images_dir), stream=True, batch=32,
                             conf=conf, imgsz=imgsz, device=device, verbose=False)
     for r in results:
-        if len(r.boxes):
-            i = int(r.boxes.conf.argmax())
-            preds[Path(r.path).stem] = (tuple(float(v) for v in r.boxes.xyxy[i]), float(r.boxes.conf[i]))
-        else:
-            preds[Path(r.path).stem] = None
+        best = {}
+        for box, box_conf, cls in zip(r.boxes.xyxy.tolist(), r.boxes.conf.tolist(), r.boxes.cls.tolist()):
+            if int(cls) not in best or box_conf > best[int(cls)][1]:
+                best[int(cls)] = (tuple(box), box_conf)
+        preds[Path(r.path).stem] = best
     return preds
 
 
-def evaluate_slices(images_dir, labels_dir, preds):
-    """Return one record per slice with its GT and predicted boxes, outcome and metrics."""
-    records = []
+def evaluate_slices(images_dir, labels_dir, preds, classes):
+    """Return {class: one record per slice with its GT and predicted boxes of the class, outcome and metrics}."""
+    records = {cls: [] for cls in classes}
     for image in sorted(images_dir.glob("*.png")):
         width, height = Image.open(image).size
-        gt = read_gt_box(labels_dir / f"{image.stem}.txt", width, height)
-        pred, conf = preds.get(image.stem) or (None, None)
+        gt_boxes = read_gt_boxes(labels_dir / f"{image.stem}.txt", width, height)
         # Slice name: <dataset>__<image name>__slice_NNN
         volume, slice_index = image.stem.rsplit("__slice_", 1)
-        record = {"name": image.stem, "image": str(image), "volume": volume, "dataset": volume.split("__")[0],
-                  "contrast": volume.split("_")[-1], "slice": int(slice_index), "gt_box": gt, "pred_box": pred,
-                  "conf": conf, "iou": None, "center_error_mm": None, "gt_coverage": None}
-        if gt and pred:
-            inter = intersection(gt, pred)
-            record.update(outcome="TP", iou=inter / (area(gt) + area(pred) - inter), gt_coverage=inter / area(gt),
-                          center_error_mm=float(np.hypot((gt[0] + gt[2] - pred[0] - pred[2]) / 2,
-                                                         (gt[1] + gt[3] - pred[1] - pred[3]) / 2)))
-        elif gt:
-            record.update(outcome="FN", iou=0.0)
-        elif pred:
-            record.update(outcome="FP", iou=0.0)
-        else:
-            record.update(outcome="TN")
-        records.append(record)
+        for cls in classes:
+            gt = gt_boxes.get(cls)
+            pred, conf = preds.get(image.stem, {}).get(cls, (None, None))
+            record = {"name": image.stem, "image": str(image), "volume": volume, "dataset": volume.split("__")[0],
+                      "contrast": volume.split("_")[-1], "slice": int(slice_index), "gt_box": gt, "pred_box": pred,
+                      "conf": conf, "iou": None, "center_error_mm": None, "gt_coverage": None}
+            if gt and pred:
+                inter = intersection(gt, pred)
+                record.update(outcome="TP", iou=inter / (area(gt) + area(pred) - inter), gt_coverage=inter / area(gt),
+                              center_error_mm=float(np.hypot((gt[0] + gt[2] - pred[0] - pred[2]) / 2,
+                                                             (gt[1] + gt[3] - pred[1] - pred[3]) / 2)))
+            elif gt:
+                record.update(outcome="FN", iou=0.0)
+            elif pred:
+                record.update(outcome="FP", iou=0.0)
+            else:
+                record.update(outcome="TN")
+            records[cls].append(record)
     return records
 
 
@@ -148,7 +159,7 @@ def volume_3d(box):
 
 
 def evaluate_volumes(records):
-    """Return one record per volume with SC, comparing the predicted and GT 3D boxes."""
+    """Return one record per volume with the structure, comparing the predicted and GT 3D boxes."""
     by_volume = defaultdict(list)
     for r in records:
         by_volume[r["volume"]].append(r)
@@ -160,7 +171,7 @@ def evaluate_volumes(records):
             continue
         pred = box_3d([(r["slice"], r["pred_box"]) for r in slices if r["pred_box"]])
         record = {"volume": volume, "dataset": slices[0]["dataset"], "contrast": slices[0]["contrast"],
-                  "n_sc_slices": sum(r["gt_box"] is not None for r in slices),
+                  "n_gt_slices": sum(r["gt_box"] is not None for r in slices),
                   "iou_3d": 0.0, "gt_coverage_3d": 0.0, "si_coverage": 0.0,
                   "gt_box_3d": gt, "pred_box_3d": pred,
                   "images": [r["image"] for r in sorted(slices, key=lambda r: r["slice"])]}
@@ -187,7 +198,7 @@ def compute_metrics(records, volumes):
         return float(np.median(values)) if values else None
 
     return {
-        "n_slices": len(records), "n_sc_slices": tp + fn, "n_empty_slices": fp + tn, **counts,
+        "n_slices": len(records), "n_gt_slices": tp + fn, "n_empty_slices": fp + tn, **counts,
         "sensitivity": ratio(tp, tp + fn), "specificity": ratio(tn, tn + fp), "precision": ratio(tp, tp + fp),
         "mean_iou": float(np.mean(ious)) if ious else None, "median_iou": median(ious),
         "iou_above_0.5": ratio(sum(i >= 0.5 for i in ious), len(ious)),
@@ -213,10 +224,11 @@ def save_csv(rows, columns, path):
                              for k, v in row.items()})
 
 
-def plot_summary(records, volumes, metrics, split, path):
-    """Plot the slice, box and volume metrics of one split in one figure."""
+def plot_summary(records, volumes, metrics, split, name, path):
+    """Plot the slice, box and volume metrics of one class (`name`) of one split in one figure."""
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    fig.suptitle(f"{split}: {metrics['n_slices']} slices, {metrics['n_volumes']} volumes with SC", fontsize=14)
+    fig.suptitle(f"{split}, {name}: {metrics['n_slices']} slices, {metrics['n_volumes']} volumes with {name}",
+                 fontsize=14)
 
     def fmt(value):
         return "n/a" if value is None else f"{value:.3f}"
@@ -224,19 +236,20 @@ def plot_summary(records, volumes, metrics, split, path):
     # Slice outcomes
     ax = axes[0, 0]
     colors = {"TP": "tab:green", "FN": "tab:red", "FP": "tab:orange", "TN": "tab:gray"}
-    labels = {"TP": "SC detected", "FN": "SC missed", "FP": "box on\nempty slice", "TN": "empty slice\nleft empty"}
+    labels = {"TP": f"{name}\ndetected", "FN": f"{name}\nmissed", "FP": f"box on slice\nwithout {name}",
+              "TN": f"slice without\n{name} left empty"}
     bars = ax.bar([labels[o] for o in OUTCOMES], [metrics[o] for o in OUTCOMES], color=[colors[o] for o in OUTCOMES])
     ax.bar_label(bars)
     ax.set_title(f"Slices: sensitivity {fmt(metrics['sensitivity'])}, specificity {fmt(metrics['specificity'])}")
     ax.set_ylabel("Number of slices")
 
-    # IoU distribution on SC slices
+    # IoU distribution on slices with the structure
     ax = axes[0, 1]
     ious = [r["iou"] for r in records if r["gt_box"]]
     ax.hist(ious, bins=np.linspace(0, 1, 21), color="tab:blue")
     for threshold in (0.5, 0.75):
         ax.axvline(threshold, color="k", linestyle="--", linewidth=1)
-    ax.set_title(f"IoU on SC slices (missed = 0): median {fmt(metrics['median_iou'])}, "
+    ax.set_title(f"IoU on {name} slices (missed = 0): median {fmt(metrics['median_iou'])}, "
                  f"{fmt(metrics['iou_above_0.5'])} >= 0.5")
     ax.set_xlabel("IoU")
     ax.set_ylabel("Number of slices")
@@ -251,19 +264,19 @@ def plot_summary(records, volumes, metrics, split, path):
     if names:
         ax.boxplot([per_dataset[d] for d in names], vert=False, showfliers=False)
         ax.set_yticks(range(1, len(names) + 1), [f"{d} ({len(per_dataset[d])})" for d in names], fontsize=8)
-    ax.set_title("IoU on SC slices per dataset (number of slices)")
+    ax.set_title(f"IoU on {name} slices per dataset (number of slices)")
     ax.set_xlabel("IoU")
     ax.set_xlim(0, 1)
 
-    # Center error on detected SC slices
+    # Center error on detected slices
     ax = axes[1, 0]
     errors = [r["center_error_mm"] for r in records if r["outcome"] == "TP"]
     ax.hist(errors, bins=np.linspace(0, max(errors + [10]), 31), color="tab:purple")
-    ax.set_title(f"Distance between box centers (detected SC): median {fmt(metrics['median_center_error_mm'])} mm")
+    ax.set_title(f"Distance between box centers (detected {name}): median {fmt(metrics['median_center_error_mm'])} mm")
     ax.set_xlabel("Center error (mm)")
     ax.set_ylabel("Number of slices")
 
-    # GT coverage on detected SC slices
+    # GT coverage on detected slices
     ax = axes[1, 1]
     ax.hist([r["gt_coverage"] for r in records if r["outcome"] == "TP"], bins=np.linspace(0, 1, 21),
             color="tab:cyan")
@@ -333,9 +346,9 @@ def plot_volume(volume, rank, path):
     plt.close(fig)
 
 
-def save_results(records, split, output_dir, n_worst):
-    """Compute the metrics of one split and save metrics, csv files, plots and worst slices. Return the metrics."""
-    out = output_dir / split
+def save_results(records, split, name, out, n_worst):
+    """Compute the metrics of one class (`name`) of one split and save metrics, csv files, plots and worst
+    slices and volumes in `out`. Return the metrics."""
     (out / "worst_slices").mkdir(parents=True, exist_ok=True)
     volumes = evaluate_volumes(records)
 
@@ -347,11 +360,11 @@ def save_results(records, split, output_dir, n_worst):
 
     save_csv(records, ["name", "dataset", "contrast", "volume", "slice", "outcome", "conf", "iou",
                        "center_error_mm", "gt_coverage", "gt_box", "pred_box"], out / "slices.csv")
-    save_csv(volumes, ["volume", "dataset", "contrast", "n_sc_slices", "iou_3d", "gt_coverage_3d", "si_coverage"],
+    save_csv(volumes, ["volume", "dataset", "contrast", "n_gt_slices", "iou_3d", "gt_coverage_3d", "si_coverage"],
              out / "volumes.csv")
-    plot_summary(records, volumes, metrics["overall"], split, out / "summary.png")
+    plot_summary(records, volumes, metrics["overall"], split, name, out / "summary.png")
 
-    # Worst slices: lowest IoU first (missed SC and boxes on empty slices have IoU 0),
+    # Worst slices: lowest IoU first (missed structures and boxes on slices without it have IoU 0),
     # then the most confident wrong boxes first
     candidates = sorted((r for r in records if r["outcome"] != "TN"), key=lambda r: (r["iou"], -(r["conf"] or 0)))
     for rank, record in enumerate(candidates[:n_worst], 1):
@@ -366,17 +379,23 @@ def save_results(records, split, output_dir, n_worst):
 
 
 def evaluate(model, dataset_yaml, split, output_dir, conf=0.25, imgsz=320, device="0", n_worst=100):
-    """Predict and evaluate one split of the YOLO dataset. Return the metrics."""
-    root = Path(yaml.safe_load(dataset_yaml.read_text())["path"])
+    """Predict and evaluate one split of the YOLO dataset, for each class. Return {class name: metrics}."""
+    cfg = yaml.safe_load(dataset_yaml.read_text())
+    root, classes = Path(cfg["path"]), {int(c): name for c, name in cfg["names"].items()}
     images_dir, labels_dir = root / "images" / split, root / "labels" / split
     images = sorted(images_dir.glob("*.png"))
-    LOGGER.info(f"Evaluating {split}: {len(images)} slices")
+    LOGGER.info(f"Evaluating {split}: {len(images)} slices, classes {list(classes.values())}")
     preds = predict(model, images_dir, conf, imgsz, device)
-    metrics = save_results(evaluate_slices(images_dir, labels_dir, preds), split, output_dir, n_worst)
+    records = evaluate_slices(images_dir, labels_dir, preds, classes)
 
-    m = metrics["overall"]
-    LOGGER.info(f"{split}: sensitivity {m['sensitivity']}, specificity {m['specificity']}, median IoU {m['median_iou']}, "
-          f"median 3D IoU {m['median_iou_3d']} (see {output_dir / split})")
+    metrics = {}
+    for cls, name in classes.items():
+        metrics[name] = save_results(records[cls], split, name, output_dir / split / name, n_worst)
+        m = metrics[name]["overall"]
+        LOGGER.info(f"{split}, {name}: sensitivity {m['sensitivity']}, specificity {m['specificity']}, "
+                    f"median IoU {m['median_iou']}, median 3D IoU {m['median_iou_3d']}")
+    (output_dir / split / "metrics.json").write_text(json.dumps(metrics, indent=4))
+    LOGGER.info(f"Results of {split} saved in {output_dir / split}")
     return metrics
 
 

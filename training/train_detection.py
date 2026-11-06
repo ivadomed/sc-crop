@@ -1,18 +1,19 @@
 """
-Train a YOLO model to detect the spinal cord (SC) on axial MRI slices.
+Train a YOLO model to detect the spinal cord (SC, class 0) and the spinal canal (class 1) on axial slices.
 
 Input: the YOLO dataset built by data/build_yolo_dataset.py (its dataset.yaml), with
-images/{training,validation,test} and one label file per slice ("0 cx cy w h", empty if no SC).
+images/{training,validation,test} and one label file per slice (one "cls cx cy w h" line per class
+present on the slice, empty if neither).
 
-At the end of the training, the best model is evaluated on the training and validation sets
-(see evaluate_detection.py for the metrics).
+At the end of the training, the best model is evaluated on the training and validation sets, with the
+metrics of each class (see evaluate_detection.py).
 
 Outputs (in RUN_DIR):
     checkpoints/weights/best.pt : best model on the validation set (highest mAP50-95)
     checkpoints/weights/last.pt : model at the last epoch
     checkpoints/                : training curves, metrics and validation plots from YOLO
     evaluation/training_curves.png : losses and validation metrics of each epoch
-    evaluation/{training,validation}/ : metrics, plots and worst slices of the best model
+    evaluation/{training,validation}/<class>/ : metrics, plots and worst slices of the best model, per class
     training.log                : messages of YOLO and of this script
 
 Inspired from: the train.py script of the previous version of sc-crop
@@ -30,7 +31,7 @@ from evaluate_detection import evaluate, plot_training_curves
 
 
 def get_parser():
-    parser = argparse.ArgumentParser(description="Train a YOLO model to detect the spinal cord on axial slices.",
+    parser = argparse.ArgumentParser(description="Train a YOLO model to detect the spinal cord and canal on axial slices.",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--dataset", required=True, type=Path, help="dataset.yaml built by build_yolo_dataset.py.")
     parser.add_argument("--run-dir", required=True, type=Path, help="Folder where checkpoints and logs are saved.")
