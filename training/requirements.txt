@@ -7,5 +7,7 @@ pillow==12.3.0
 # Detection training
 ultralytics==8.4.192
 opencv-python==5.0.0.93
+# Extra MRI augmentations (train_detection.py --extra-augment)
+albumentations==2.0.8
 # Evaluation plots
 matplotlib==3.10.9
