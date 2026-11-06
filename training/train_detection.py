@@ -9,14 +9,17 @@ Augmentations: YOLO built-in ones (get_augmentations: brightness, rotation, scal
 flip). With --extra-augment, MRI intensity augmentations are added (get_extra_augmentations: downscale,
 blur, noise, gamma, bias field, inversion), in place of the default albumentations of YOLO.
 
-At the end of the training, the best model is evaluated on the training, validation, test and external
-test sets (splits without slices are skipped), with the metrics of each class (see evaluate_detection.py).
+At the end of the training, the confidence threshold of each class is chosen on the validation set (best
+slice-level F1), then the best model is evaluated with these thresholds on the training, validation, test
+and external test sets, with the metrics of each class (see evaluate_detection.py).
 
 Outputs (in RUN_DIR):
     checkpoints/weights/best.pt : best model on the validation set (highest mAP50-95)
     checkpoints/weights/last.pt : model at the last epoch
     checkpoints/                : training curves, metrics and validation plots from YOLO
     evaluation/training_curves.png : losses and validation metrics of each epoch
+    evaluation/thresholds.json  : confidence threshold of each class (chosen on the validation set)
+    evaluation/thresholds.png   : sensitivity, specificity, precision and F1 vs the threshold, per class
     evaluation/<split>/metrics.json : metrics of all classes (split = training, validation, test, external_test)
     evaluation/<split>/<class>/     : metrics, plots, worst slices and worst volumes of the best model, per class
     training.log                : messages of YOLO and of this script
@@ -37,7 +40,7 @@ from ultralytics import YOLO
 from ultralytics.data.augment import Albumentations
 from ultralytics.utils import LOGGER
 
-from evaluate_detection import evaluate, plot_training_curves
+from evaluate_detection import evaluate, plot_training_curves, read_dataset, select_thresholds
 
 
 def get_parser():
@@ -53,7 +56,9 @@ def get_parser():
     parser.add_argument("--patience", type=int, default=100, help="Epochs without improvement before stopping.")
     parser.add_argument("--workers", type=int, default=2, help="Data loading workers.")
     parser.add_argument("--seed", type=int, default=50)
-    parser.add_argument("--conf", type=float, default=0.25, help="Minimum confidence of a predicted box for the final evaluation.")
+    parser.add_argument("--conf", type=float, default=None,
+                        help="Same confidence threshold for all classes in the final evaluation "
+                             "(default: one threshold per class, chosen on the validation set).")
     parser.add_argument("--extra-augment", action="store_true",
                         help="Add the MRI intensity augmentations of get_extra_augmentations (albumentations).")
     return parser
@@ -173,8 +178,13 @@ def main():
     plot_training_curves(save_dir / "results.csv", eval_dir / "training_curves.png")
     best_model = YOLO(best_weights)
     root = Path(yaml.safe_load(args.dataset.read_text())["path"])
+    # Confidence threshold of each class: chosen on the validation set (best F1), or --conf for all classes
+    if args.conf is None:
+        thresholds = select_thresholds(best_model, args.dataset, eval_dir, args.imgsz, args.device)
+    else:
+        thresholds = {cls: args.conf for cls in read_dataset(args.dataset, "validation")[2]}
     for split in ("training", "validation", "test", "external_test"):
-        evaluate(best_model, args.dataset, split, eval_dir, args.conf, args.imgsz, args.device)
+        evaluate(best_model, args.dataset, split, eval_dir, thresholds, args.imgsz, args.device)
 
 
 if __name__ == "__main__":

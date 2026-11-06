@@ -5,7 +5,12 @@ structure on each slice and a 3D box around it.
 
 All metrics are computed separately for each class of the dataset (dataset.yaml "names": spinal_cord, canal).
 For each class, each slice has at most one GT box, and the predicted box of a slice is its most confident
-box of that class, if its confidence is >= --conf. Slices are at 1 x 1 mm in-plane, so 1 pixel = 1 mm.
+box of that class, if its confidence is >= the threshold of the class. Slices are at 1 x 1 mm in-plane,
+so 1 pixel = 1 mm.
+
+Confidence thresholds: one per class, chosen on the validation set as the one with the best slice-level F1
+(2 TP / (2 TP + FP + FN), over thresholds 0.05 to 0.95), then used for all splits. They can also be read
+from a thresholds.json file (--thresholds) or set to one value for all classes (--conf).
 
 Metrics (for each class, "structure" = SC or canal):
     Slice level (is the structure on this slice?):
@@ -22,8 +27,11 @@ Metrics (for each class, "structure" = SC or canal):
     with a box. On volumes with the structure:
         3D IoU, 3D GT coverage, and SI coverage (fraction of the GT slices inside the predicted range)
 
+Outputs (in OUTPUT_DIR):
+    thresholds.json       : threshold of each class (when chosen on the validation set)
+    thresholds.png        : sensitivity, specificity, precision and F1 of each class vs the threshold (validation)
 Outputs (in OUTPUT_DIR/<split>/):
-    metrics.json          : all metrics of all classes, overall and per dataset
+    metrics.json          : all metrics of all classes (with their threshold), overall and per dataset
     <class>/metrics.json  : metrics of the class, overall and per dataset
     <class>/slices.csv    : results of each slice
     <class>/volumes.csv   : results of each volume
@@ -34,7 +42,8 @@ Outputs (in OUTPUT_DIR/<split>/):
 
 Usage:
     python evaluate_detection.py --model <run_dir>/checkpoints/weights/best.pt \
-        --dataset <yolo_dataset>/dataset.yaml --split test --output-dir <run_dir>/evaluation
+        --dataset <yolo_dataset>/dataset.yaml --split test --output-dir <run_dir>/evaluation \
+        [--thresholds <run_dir>/evaluation/thresholds.json]
 
 Author: Pierre-Louis Benveniste
 """
@@ -57,6 +66,10 @@ from PIL import Image
 LOGGER = logging.getLogger("ultralytics")
 # Structure detected, structure missed, box on a slice without the structure, slice without it left empty
 OUTCOMES = ("TP", "FN", "FP", "TN")
+# Boxes are predicted with a very low confidence, then filtered with the threshold of each class
+MIN_CONF = 0.001
+# Thresholds tested on the validation set
+THRESHOLDS = np.round(np.arange(0.05, 0.951, 0.01), 2)
 
 
 def get_parser():
@@ -67,7 +80,10 @@ def get_parser():
     parser.add_argument("--dataset", required=True, type=Path, help="dataset.yaml built by build_yolo_dataset.py.")
     parser.add_argument("--split", default="test", choices=["training", "validation", "test", "external_test"])
     parser.add_argument("--output-dir", required=True, type=Path, help="Results are saved in <output-dir>/<split>/.")
-    parser.add_argument("--conf", type=float, default=0.25, help="Minimum confidence of a predicted box.")
+    parser.add_argument("--thresholds", type=Path, default=None,
+                        help="thresholds.json with the threshold of each class (default: chosen on the validation set).")
+    parser.add_argument("--conf", type=float, default=None,
+                        help="Same confidence threshold for all classes (overrides --thresholds).")
     parser.add_argument("--imgsz", type=int, default=None, help="Image size (default: the one used for training).")
     parser.add_argument("--device", default="0", help="GPU id or cpu.")
     parser.add_argument("--n-worst", type=int, default=100, help="Number of worst slices and worst volumes to save as png.")
@@ -100,13 +116,14 @@ def intersection(a, b):
 
 # ── Predictions and metrics ───────────────────────────────────────────────────
 
-def predict(model, images_dir, conf, imgsz, device):
+def predict(model, images_dir, imgsz, device):
     """Return {image name: {class: ((x1, y1, x2, y2), confidence)}} with the most confident box of each class
-    of each image of `images_dir` (classes without box are not in the dict)."""
+    of each image of `images_dir` (classes without box are not in the dict). All boxes with a confidence
+    >= MIN_CONF are considered: the thresholds of the classes are applied afterwards."""
     preds = {}
     # The source must be the folder, not a list of paths: YOLO loads a list in memory as one single batch
     results = model.predict(source=str(images_dir), stream=True, batch=32,
-                            conf=conf, imgsz=imgsz, device=device, verbose=False)
+                            conf=MIN_CONF, imgsz=imgsz, device=device, verbose=False)
     for r in results:
         best = {}
         for box, box_conf, cls in zip(r.boxes.xyxy.tolist(), r.boxes.conf.tolist(), r.boxes.cls.tolist()):
@@ -116,17 +133,20 @@ def predict(model, images_dir, conf, imgsz, device):
     return preds
 
 
-def evaluate_slices(images_dir, labels_dir, preds, classes):
-    """Return {class: one record per slice with its GT and predicted boxes of the class, outcome and metrics}."""
-    records = {cls: [] for cls in classes}
+def evaluate_slices(images_dir, labels_dir, preds, thresholds):
+    """Return {class: one record per slice with its GT and predicted boxes of the class, outcome and metrics}.
+    A predicted box is kept if its confidence is >= the threshold of its class (`thresholds`: {class: threshold})."""
+    records = {cls: [] for cls in thresholds}
     for image in sorted(images_dir.glob("*.png")):
         width, height = Image.open(image).size
         gt_boxes = read_gt_boxes(labels_dir / f"{image.stem}.txt", width, height)
         # Slice name: <dataset>__<image name>__slice_NNN
         volume, slice_index = image.stem.rsplit("__slice_", 1)
-        for cls in classes:
+        for cls, threshold in thresholds.items():
             gt = gt_boxes.get(cls)
             pred, conf = preds.get(image.stem, {}).get(cls, (None, None))
+            if conf is not None and conf < threshold:
+                pred, conf = None, None
             record = {"name": image.stem, "image": str(image), "volume": volume, "dataset": volume.split("__")[0],
                       "contrast": volume.split("_")[-1], "slice": int(slice_index), "gt_box": gt, "pred_box": pred,
                       "conf": conf, "iou": None, "center_error_mm": None, "gt_coverage": None}
@@ -346,13 +366,13 @@ def plot_volume(volume, rank, path):
     plt.close(fig)
 
 
-def save_results(records, split, name, out, n_worst):
-    """Compute the metrics of one class (`name`) of one split and save metrics, csv files, plots and worst
-    slices and volumes in `out`. Return the metrics."""
+def save_results(records, split, name, threshold, out, n_worst):
+    """Compute the metrics of one class (`name`, with its confidence `threshold`) of one split and save
+    metrics, csv files, plots and worst slices and volumes in `out`. Return the metrics."""
     (out / "worst_slices").mkdir(parents=True, exist_ok=True)
     volumes = evaluate_volumes(records)
 
-    metrics = {"overall": compute_metrics(records, volumes), "per_dataset": {}}
+    metrics = {"threshold": threshold, "overall": compute_metrics(records, volumes), "per_dataset": {}}
     for dataset in sorted({r["dataset"] for r in records}):
         metrics["per_dataset"][dataset] = compute_metrics([r for r in records if r["dataset"] == dataset],
                                                           [v for v in volumes if v["dataset"] == dataset])
@@ -362,7 +382,8 @@ def save_results(records, split, name, out, n_worst):
                        "center_error_mm", "gt_coverage", "gt_box", "pred_box"], out / "slices.csv")
     save_csv(volumes, ["volume", "dataset", "contrast", "n_gt_slices", "iou_3d", "gt_coverage_3d", "si_coverage"],
              out / "volumes.csv")
-    plot_summary(records, volumes, metrics["overall"], split, name, out / "summary.png")
+    plot_summary(records, volumes, metrics["overall"], f"{split} (threshold {threshold:.2f})", name,
+                 out / "summary.png")
 
     # Worst slices: lowest IoU first (missed structures and boxes on slices without it have IoU 0),
     # then the most confident wrong boxes first
@@ -378,22 +399,75 @@ def save_results(records, split, name, out, n_worst):
     return metrics
 
 
-def evaluate(model, dataset_yaml, split, output_dir, conf=0.25, imgsz=320, device="0", n_worst=100):
-    """Predict and evaluate one split of the YOLO dataset, for each class. Return {class name: metrics}."""
+def read_dataset(dataset_yaml, split):
+    """Return (images folder, labels folder, {class: name}) of one split of the YOLO dataset."""
     cfg = yaml.safe_load(dataset_yaml.read_text())
-    root, classes = Path(cfg["path"]), {int(c): name for c, name in cfg["names"].items()}
-    images_dir, labels_dir = root / "images" / split, root / "labels" / split
+    root = Path(cfg["path"])
+    return root / "images" / split, root / "labels" / split, {int(c): name for c, name in cfg["names"].items()}
+
+
+def select_thresholds(model, dataset_yaml, output_dir, imgsz=320, device="0"):
+    """Choose the confidence threshold of each class on the validation set: the one with the best slice-level
+    F1 among THRESHOLDS. Save thresholds.json and thresholds.png in `output_dir`. Return {class: threshold}."""
+    images_dir, labels_dir, classes = read_dataset(dataset_yaml, "validation")
+    images = sorted(images_dir.glob("*.png"))
+    LOGGER.info(f"Choosing the thresholds on the validation set: {len(images)} slices")
+    preds = predict(model, images_dir, imgsz, device)
+
+    thresholds = {}
+    fig, axes = plt.subplots(1, len(classes), figsize=(7 * len(classes), 5), squeeze=False)
+    for ax, (cls, name) in zip(axes[0], classes.items()):
+        # For each slice: does it contain the class, and confidence of its most confident box (0 if none)
+        has_gt = np.array([cls in read_gt_boxes(labels_dir / f"{image.stem}.txt", 1, 1) for image in images])
+        conf = np.array([preds.get(image.stem, {}).get(cls, (None, 0.0))[1] for image in images])
+        detected = conf[None, :] >= THRESHOLDS[:, None]   # (threshold, slice)
+        tp, fp = (detected & has_gt).sum(axis=1), (detected & ~has_gt).sum(axis=1)
+        fn, tn = (~detected & has_gt).sum(axis=1), (~detected & ~has_gt).sum(axis=1)
+        f1 = 2 * tp / np.maximum(2 * tp + fp + fn, 1)
+        thresholds[cls] = float(THRESHOLDS[np.argmax(f1)])
+
+        ax.plot(THRESHOLDS, tp / np.maximum(tp + fn, 1), label="sensitivity")
+        ax.plot(THRESHOLDS, tn / np.maximum(tn + fp, 1), label="specificity")
+        ax.plot(THRESHOLDS, tp / np.maximum(tp + fp, 1), label="precision")
+        ax.plot(THRESHOLDS, f1, color="k", label="F1")
+        ax.axvline(thresholds[cls], color="k", linestyle="--", linewidth=1,
+                   label=f"chosen: {thresholds[cls]:.2f} (F1 {f1.max():.3f})")
+        ax.set_title(f"{name} (validation slices)")
+        ax.set_xlabel("Confidence threshold")
+        ax.set_ylim(0, 1.02)
+        ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(output_dir / "thresholds.png", dpi=100)
+    plt.close(fig)
+
+    (output_dir / "thresholds.json").write_text(
+        json.dumps({classes[cls]: t for cls, t in thresholds.items()}, indent=4))
+    LOGGER.info(f"Thresholds: {({classes[cls]: t for cls, t in thresholds.items()})} (see {output_dir / 'thresholds.png'})")
+    return thresholds
+
+
+def read_thresholds(path, dataset_yaml):
+    """Return {class: threshold} from a thresholds.json file ({class name: threshold})."""
+    _, _, classes = read_dataset(dataset_yaml, "validation")
+    by_name = json.loads(path.read_text())
+    return {cls: by_name[name] for cls, name in classes.items()}
+
+
+def evaluate(model, dataset_yaml, split, output_dir, thresholds, imgsz=320, device="0", n_worst=100):
+    """Predict and evaluate one split of the YOLO dataset, for each class with its confidence threshold
+    (`thresholds`: {class: threshold}). Return {class name: metrics}."""
+    images_dir, labels_dir, classes = read_dataset(dataset_yaml, split)
     images = sorted(images_dir.glob("*.png"))
     LOGGER.info(f"Evaluating {split}: {len(images)} slices, classes {list(classes.values())}")
-    preds = predict(model, images_dir, conf, imgsz, device)
-    records = evaluate_slices(images_dir, labels_dir, preds, classes)
+    preds = predict(model, images_dir, imgsz, device)
+    records = evaluate_slices(images_dir, labels_dir, preds, thresholds)
 
     metrics = {}
     for cls, name in classes.items():
-        metrics[name] = save_results(records[cls], split, name, output_dir / split / name, n_worst)
+        metrics[name] = save_results(records[cls], split, name, thresholds[cls], output_dir / split / name, n_worst)
         m = metrics[name]["overall"]
-        LOGGER.info(f"{split}, {name}: sensitivity {m['sensitivity']}, specificity {m['specificity']}, "
-                    f"median IoU {m['median_iou']}, median 3D IoU {m['median_iou_3d']}")
+        LOGGER.info(f"{split}, {name} (threshold {thresholds[cls]:.2f}): sensitivity {m['sensitivity']}, "
+                    f"specificity {m['specificity']}, median IoU {m['median_iou']}, median 3D IoU {m['median_iou_3d']}")
     (output_dir / split / "metrics.json").write_text(json.dumps(metrics, indent=4))
     LOGGER.info(f"Results of {split} saved in {output_dir / split}")
     return metrics
@@ -442,7 +516,15 @@ def main():
 
     model = YOLO(args.model)
     imgsz = args.imgsz or model.ckpt.get("train_args", {}).get("imgsz", 320)
-    evaluate(model, args.dataset, args.split, args.output_dir, args.conf, imgsz, args.device, args.n_worst)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    # Thresholds: same for all classes (--conf), from a file (--thresholds), or chosen on the validation set
+    if args.conf is not None:
+        thresholds = {cls: args.conf for cls in read_dataset(args.dataset, args.split)[2]}
+    elif args.thresholds is not None:
+        thresholds = read_thresholds(args.thresholds, args.dataset)
+    else:
+        thresholds = select_thresholds(model, args.dataset, args.output_dir, imgsz, args.device)
+    evaluate(model, args.dataset, args.split, args.output_dir, thresholds, imgsz, args.device, args.n_worst)
 
 
 if __name__ == "__main__":
