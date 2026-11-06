@@ -4,11 +4,9 @@ bounding boxes of the spinal cord (SC, class 0) and of the spinal canal (class 1
 
 For each image of the MSD json:
     1. 4D images (e.g. DWI, fMRI) are averaged over time into a 3D image
-    2. Reorient the image to LAS (axis permutation/flip, no interpolation) and compute its 1 x 1 x 10 mm grid
-       (RL x AP x SI)
-    3. Resample the image onto this grid (linear). Keep only the largest connected component of the SC mask
-       and of the canal mask, and resample them onto the same grid (nearest neighbour), so that the image
-       and its masks are always aligned
+    2. Keep only the largest connected component of the SC mask and of the canal mask, then reorient
+       image and masks to LAS (axis permutation/flip, no interpolation)
+    3. Resample to 1 x 1 x 10 mm (RL x AP x SI): linear for the image, nearest neighbour for the masks
     4. Cut axial slices, from Superior (slice_000) to Inferior.
        Slice = data[:, :, z].T[::-1, :] → row 0 = Anterior, column 0 = patient Right
     5. Normalize intensities to uint8: clip to the 0.5-99.5 percentiles of the whole volume, then rescale
@@ -113,10 +111,9 @@ def yolo_bbox(mask_slice, cls):
     return f"{cls} {(c1 + c2) / 2 / width:.6f} {(r1 + r2) / 2 / height:.6f} {(c2 - c1) / width:.6f} {(r2 - r1) / height:.6f}\n"
 
 
-def prepare_mask(mask, affine, grid, name, warnings):
-    """Keep the largest connected component of a binary mask (voxels touching by a face, edge or corner)
-    and resample it (nearest neighbour) onto `grid`, the grid of the image. Masks with several components
-    are added to `warnings`."""
+def prepare_mask(mask, affine, name, warnings):
+    """Keep the largest connected component of a binary mask (voxels touching by a face, edge or corner),
+    reorient it to LAS and resample it to VOXEL_SIZE. Masks with several components are added to `warnings`."""
     # Masks of single volume 4D images (e.g. canal of func images) have a 4th dimension of 1
     mask = mask.reshape(mask.shape[:3])
     components, n_components = ndimage.label(mask, structure=np.ones((3,) * mask.ndim))
@@ -124,18 +121,14 @@ def prepare_mask(mask, affine, grid, name, warnings):
         sizes = np.bincount(components.ravel())[1:]   # [1:] skips the background
         mask = (components == np.argmax(sizes) + 1).astype(np.uint8)
         warnings.append(f"{name}: {n_components} connected components, kept the largest")
-    return resample_from_to(nib.Nifti1Image(mask.astype(np.uint8), affine), grid, order=0).get_fdata() > 0.5
+    mask = reorient_to_las(nib.Nifti1Image(mask.astype(np.uint8), affine))
+    return resample_from_to(mask, target_grid(mask, VOXEL_SIZE), order=0).get_fdata() > 0.5
 
 
 def process_entry(entry, output_dir, rgb, warnings, sc_outside):
     """Write the png slices and YOLO label files of one MSD entry. Return the number of slices.
     Images where more than MAX_SC_OUTSIDE_CANAL of the SC is outside the canal are added to `sc_outside`."""
-    raw_img = nib.load(entry["image"])
-    img = reorient_to_las(to_3d(raw_img))
-    # 1 x 1 x 10 mm LAS grid of the image: the image and all its masks are resampled onto it
-    grid = target_grid(img, VOXEL_SIZE)
-    img_data = normalize(resample_from_to(img, grid, order=1).get_fdata(dtype=np.float32))
-
+    img = reorient_to_las(to_3d(nib.load(entry["image"])))
     # Gold canal segmentation if there is one, else the silver one (predicted by segment_canal.py)
     canal_path = entry["canal_seg"] or entry["canal_silver"]
     canal = nib.load(canal_path)
@@ -143,8 +136,8 @@ def process_entry(entry, output_dir, rgb, warnings, sc_outside):
     canal_value = entry.get("canal_label_value")
     canal_mask = np.asarray(canal.dataobj) == canal_value if canal_value else np.asarray(canal.dataobj) > 0
     # Gold canal masks with a wrong affine (canal_ignore_affine) are on the image grid: use the image affine
-    canal_affine = raw_img.affine if entry.get("canal_ignore_affine") else canal.affine
-    canal_data = prepare_mask(canal_mask, canal_affine, grid, canal_path, warnings)
+    canal_affine = nib.load(entry["image"]).affine if entry.get("canal_ignore_affine") else canal.affine
+    canal_data = prepare_mask(canal_mask, canal_affine, canal_path, warnings)
 
     if entry["sc_seg"] is None:
         # Canal-only datasets (e.g. CT, SC not visible): no SC box
@@ -153,13 +146,14 @@ def process_entry(entry, output_dir, rgb, warnings, sc_outside):
         # SC = voxels equal to sc_label_value (multi-class labels)
         label = nib.load(entry["sc_seg"])
         # SC masks with a wrong affine (sc_ignore_affine) are on the image grid: use the image affine
-        sc_affine = raw_img.affine if entry.get("sc_ignore_affine") else label.affine
-        sc_data = prepare_mask((np.asarray(label.dataobj) == entry["sc_label_value"]), sc_affine, grid,
+        sc_affine = nib.load(entry["image"]).affine if entry.get("sc_ignore_affine") else label.affine
+        sc_data = prepare_mask((np.asarray(label.dataobj) == entry["sc_label_value"]), sc_affine,
                                entry["sc_seg"], warnings)
-        # The SC should be inside the canal (both masks are on the image grid)
+        # The SC should be inside the canal (both masks are on the same 1 x 1 x 10 mm grid)
         outside = (sc_data & ~canal_data).sum() / max(sc_data.sum(), 1)
         if outside > MAX_SC_OUTSIDE_CANAL:
             sc_outside.append(f"{entry['image']}: {outside:.1%} of the SC outside the canal")
+    img_data = normalize(resample_from_to(img, target_grid(img, VOXEL_SIZE), order=1).get_fdata(dtype=np.float32))
 
     def get_slice(data, z):
         """Axial slice z (row 0 = Anterior, column 0 = Right), black if z is outside the volume."""
