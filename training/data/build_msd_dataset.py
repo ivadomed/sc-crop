@@ -189,6 +189,12 @@ def collect_dataset(cfg, data_dir, skipped):
         if problem:
             skipped.append(f"{name}: {problem}: {mask}")
             continue
+        # Some datasets (e.g. philadelphia-pediatric) only use the 4D images of their image_dirs
+        # (e.g. motion corrected), not the 4D images of the raw data
+        in_image_dirs = any(image.is_relative_to(dataset_root / d) for d in cfg.get("image_dirs", []))
+        if cfg.get("exclude_raw_4d") and not in_image_dirs and nib.load(image).ndim == 4:
+            skipped.append(f"{name}: 4D image outside {cfg.get('image_dirs', [])}: {image}")
+            continue
 
         # External test datasets: the image must also have a gold canal segmentation
         extra = {}

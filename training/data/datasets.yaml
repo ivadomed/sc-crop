@@ -19,6 +19,8 @@
 #                  (e.g. [_label-canal_seg.nii.gz] when mask_suffix is _seg.nii.gz). Default: [].
 #   image_dirs   : extra folders (relative to the dataset) where images are looked for when they are
 #                  not in the raw data (e.g. [derivatives/motion_correction] for moco images). Default: [].
+#   exclude_raw_4d : true to skip the 4D images that are not in image_dirs (e.g. raw DWI when only the
+#                  motion corrected ones should be used). Default: false.
 #   external_test : true for datasets only used for external testing (all subjects in the external_test
 #                  split). Only images with both an SC segmentation and a gold canal segmentation are used.
 #                  Default: false.
@@ -167,6 +169,7 @@ datasets:
     mask_suffix: _label-SC_mask.nii.gz
     region:      null
     image_dirs:  [derivatives/motion_correction]
+    exclude_raw_4d: true   # only the 4D images of derivatives/motion_correction are used
 
   - name: nih-ms-mp2rage
     host: neuro
