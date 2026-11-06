@@ -28,6 +28,7 @@ pip install -r training/requirements.txt
 In order of use:
 
 - `data/datasets.yaml`: list of the datasets with, for each one, where to download it and how to find its SC segmentations.
+- `data/exclude.txt`: images excluded from the MSD json (one path per line, relative to the data folder).
 - `data/download_all_datasets.sh`: clones (or updates) every dataset of `datasets.yaml`, downloads their git-annex files and logs the version (branch and commit) of each dataset.
 - `data/build_msd_dataset.py`: gathers every SC segmentation with its image and metadata in an MSD json. Skips empty masks and labels with different affine from image, splits the subjects of each dataset 60/20/20 into training/validation/test and logs statistics. External test datasets (`external_test: true` in `datasets.yaml`) all go to an `external_test` split, keeping only images with both an SC and a gold canal segmentation.
 - `data/segment_canal.py`: segments the spinal canal of every image of the MSD json with `sct_deepseg canal` (GPU) and saves the predictions in `derivatives/pred-canal-seg/` of each dataset, a copy of the MSD json with the path of each prediction (`canal` field), and logs of failed and empty segmentations.

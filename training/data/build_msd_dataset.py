@@ -12,6 +12,8 @@ With canal_ignore_affine, canal masks with a different affine from the image are
 
 Canal-only datasets (e.g. CT where the SC is not visible) have no SC label.
 
+Images listed in exclude.txt (next to this script, paths relative to the data folder) are skipped.
+
 Outputs (in OUTPUT_FOLDER):
     - sc_seg_msd_<YYYYMMDD>.json : the MSD dataset (absolute paths to images and labels), split into
                                    training/validation/test (60/20/20% of the subjects of each dataset)
@@ -37,6 +39,8 @@ import yaml
 
 # Dataset registry of the repo, next to this script
 CONFIG = Path(__file__).parent / "datasets.yaml"
+# Images excluded from the MSD dataset (paths relative to the data folder), next to this script
+EXCLUDE = Path(__file__).parent / "exclude.txt"
 # A volume is almost isotropic (→ 3D) when its thickest voxel side is less than this many times its thinnest one
 ISOTROPY_RATIO = 1.2
 # Contrasts that are always 3D acquisitions
@@ -139,8 +143,15 @@ def check_label(image_path, label_path, label_value, structure="SC", check_affin
     return None
 
 
-def collect_dataset(cfg, data_dir, skipped):
-    """Return one MSD entry per SC segmentation of a dataset. Problems are appended to `skipped`."""
+def read_exclude():
+    """Return the set of excluded images (paths relative to the data folder) of exclude.txt."""
+    lines = (line.strip() for line in EXCLUDE.read_text().splitlines()) if EXCLUDE.exists() else []
+    return {line for line in lines if line and not line.startswith("#")}
+
+
+def collect_dataset(cfg, data_dir, skipped, excluded):
+    """Return one MSD entry per SC segmentation of a dataset. Problems are appended to `skipped`.
+    Images of `excluded` (paths relative to data_dir) are skipped."""
     name = cfg["name"]
     dataset_root = data_dir / name
     labels_root = dataset_root / "derivatives" / (cfg.get("labels_dir") or "labels")
@@ -166,6 +177,9 @@ def collect_dataset(cfg, data_dir, skipped):
                            cfg.get("image_dirs", []))
         if image is None:
             skipped.append(f"{name}: no image found for {mask}")
+            continue
+        if str(image.relative_to(data_dir)) in excluded:
+            skipped.append(f"{name}: excluded in {EXCLUDE.name}: {image}")
             continue
 
         subject = re.search(r"sub-[A-Za-z0-9]+", image.name)
@@ -324,10 +338,11 @@ def main():
     with open(CONFIG) as f:
         datasets = yaml.safe_load(f)["datasets"]
 
+    excluded = read_exclude()
     entries, skipped = [], []
     for cfg in datasets:
         print(f"Processing {cfg['name']}...")
-        dataset_entries = collect_dataset(cfg, data_dir, skipped)
+        dataset_entries = collect_dataset(cfg, data_dir, skipped, excluded)
         print(f"  {sum(e['sc_seg'] is not None for e in dataset_entries)} SC segmentations")
         # Datasets where gold canal segmentations are searched (external test and canal-only datasets)
         if cfg.get("external_test") or cfg.get("canal_label_index"):
