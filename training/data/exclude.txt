@@ -1,0 +1,11 @@
+# Images excluded from the MSD dataset (build_msd_dataset.py), one per line, relative to the data folder.
+# Lines starting with # are ignored.
+
+data-multi-subject/sub-sherbrooke03/dwi/sub-sherbrooke03_rec-average_dwi.nii.gz
+fullbody-totalsegmentator-mri/sub-0095/anat/sub-0095_MR.nii.gz
+fullbody-totalsegmentator-mri/sub-0600/anat/sub-0600_MR.nii.gz
+fullbody-totalsegmentator-mri/sub-0611/anat/sub-0611_MR.nii.gz
+philadelphia-pediatric/derivatives/motion_correction/sub-169/dwi/sub-169_run-1_dwi_moco.nii.gz
+sct-testing-large/sub-spineGeneric002/dwi/sub-spineGeneric002_acq-dwiMocoMean_dwi.nii.gz
+sct-testing-large/sub-user0010/anat/sub-user0010_T1w.nii.gz
+philadelphia-pediatric/sub-169/anat/sub-169_rec-composed_T1w.nii.gz
