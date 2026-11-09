@@ -6,11 +6,13 @@ For each model (checkpoints/weights/best.pt of each training folder <date>_<conf
     1. load the model on the device
     2. for each volume: preprocess the image and predict all its slices in one batch
 Each step is timed. Models and volumes are processed one after the other, on the GPU if there is one else on the CPU
+(--cpu: always on the CPU)
 
-Outputs (in OUTPUT_FOLDER):
-    inference_speed_<YYYYMMDD_HHMMSS>.csv         : preprocessing and prediction time of each volume, for each model
-    inference_speed_summary_<YYYYMMDD_HHMMSS>.csv : per model: number of parameters, loading time, mean
-                                                    preprocessing, prediction and total time per volume (ms)
+Outputs (in OUTPUT_FOLDER), DEVICE = gpu or cpu:
+    inference_speed_<DEVICE>_<YYYYMMDD_HHMMSS>.csv         : preprocessing and prediction time of each volume, for
+                                                             each model
+    inference_speed_summary_<DEVICE>_<YYYYMMDD_HHMMSS>.csv : per model: number of parameters, loading time, mean
+                                                             preprocessing, prediction and total time per volume (ms)
 
 Author: Pierre-Louis Benveniste
 """
@@ -43,12 +45,13 @@ def get_parser():
     parser.add_argument("--msd", required=True, type=Path, help="MSD json (its test images are used).")
     parser.add_argument("--output-dir", required=True, type=Path, help="Folder where the results are saved.")
     parser.add_argument("--n-volumes", type=int, default=50, help="Number of test volumes, selected at random.")
+    parser.add_argument("--cpu", action="store_true", help="Run on the CPU, even if there is a GPU.")
     return parser
 
 
-def now():
-    """Return the current time (s), once the GPU (if there is one) has finished its work."""
-    if torch.cuda.is_available():
+def now(gpu):
+    """Return the current time (s), once the GPU (if used) has finished its work."""
+    if gpu:
         torch.cuda.synchronize()
     return time.perf_counter()
 
@@ -56,7 +59,9 @@ def now():
 def main():
     args = get_parser().parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"inference_speed_{datetime.now():%Y%m%d_%H%M%S}"
+    gpu = torch.cuda.is_available() and not args.cpu
+    device = None if gpu else "cpu"   # None: YOLO uses GPU 0
+    stem = f"inference_speed_{'gpu' if gpu else 'cpu'}_{datetime.now():%Y%m%d_%H%M%S}"
 
     images = sorted({entry["image"] for entry in json.loads(args.msd.read_text())["test"]})
     volumes = sorted(random.Random(SEED).sample(images, args.n_volumes))
@@ -64,26 +69,26 @@ def main():
     for v in volumes:
         Path(v).read_bytes()
 
-    print(f"Device: {torch.cuda.get_device_name() if torch.cuda.is_available() else 'cpu'}")
+    print(f"Device: {torch.cuda.get_device_name() if gpu else f'cpu ({torch.get_num_threads()} threads)'}")
 
     rows, summary = [], []
     for weights in sorted(args.experiments_dir.glob("*/checkpoints/weights/best.pt")):
         name = weights.parents[2].name.split("_", 2)[-1]   # <configuration>_<model>, without the date
         rgb = name.startswith("rgb")
 
-        # YOLO moves the model to the GPU (if there is one) at its first prediction: one empty slice is predicted
-        start = now()
+        # YOLO moves the model to the device at its first prediction: one empty slice is predicted
+        start = now(gpu)
         model = YOLO(weights)
-        model.predict(np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8), verbose=False)
-        loading = now() - start
+        model.predict(np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8), device=device, verbose=False)
+        loading = now(gpu) - start
 
         model_rows = []
         for v in volumes:
-            start = now()
+            start = now(gpu)
             slices = preprocess(v, rgb)
-            preprocessed = now()
-            predict_slices(model, slices, {cls: CONF for cls in model.names})
-            end = now()
+            preprocessed = now(gpu)
+            predict_slices(model, slices, {cls: CONF for cls in model.names}, device=device)
+            end = now(gpu)
             model_rows.append({"model": name, "volume": v, "n_slices": len(slices),
                                "preprocessing_ms": round(1000 * (preprocessed - start), 2),
                                "prediction_ms": round(1000 * (end - preprocessed), 2),
