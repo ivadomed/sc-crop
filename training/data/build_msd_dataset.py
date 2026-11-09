@@ -8,7 +8,7 @@ orientation (axial/sagittal/coronal), field strength, region and the value of th
 
 External test datasets are not split: all their images go to the external_test split.
 Only their images with both an SC segmentation and a gold canal segmentation are kept.
-With canal_ignore_affine, canal masks with a different affine from the image are accepted. Same for the SC masks with sc_ignore_affine.
+Labels with a different shape or affine from their image are skipped (see data/fix_seg_affine.py to fix them).
 
 Canal-only datasets (e.g. CT where the SC is not visible) have no SC label.
 
@@ -130,12 +130,12 @@ def get_image_metadata(image_path, contrast):
             "orientation": orientation, "field_strength": field_strength}
 
 
-def check_label(image_path, label_path, label_value, structure="SC", check_affine=True):
+def check_label(image_path, label_path, label_value, structure="SC"):
     """Return why a label can't be used with its image, or None if it is fine."""
     img, label = nib.load(image_path), nib.load(label_path)
     if img.shape[:3] != label.shape[:3]:
         return f"image and label shapes differ ({img.shape[:3]} vs {label.shape[:3]})"
-    if check_affine and not np.allclose(img.affine, label.affine, atol=1e-3):
+    if not np.allclose(img.affine, label.affine, atol=1e-3):
         return "image and label affines differ"
     # Loads the label data: an empty mask has 0 connected components
     if not (np.asarray(label.dataobj) == label_value).any():
@@ -194,8 +194,7 @@ def collect_dataset(cfg, data_dir, skipped, excluded):
             if canal_label_index:
                 problem = check_label(image, mask, canal_label_index, "canal")
             else:
-                # Some datasets have SC masks with a different affine from the image (sc_ignore_affine)
-                problem = check_label(image, mask, sc_label_value, "SC", not cfg.get("sc_ignore_affine", False))
+                problem = check_label(image, mask, sc_label_value, "SC")
             metadata = get_image_metadata(image, contrast)
         except Exception as e:   # corrupted or partially downloaded image or label
             skipped.append(f"{name}: could not read {image} or {mask} ({e})")
@@ -218,16 +217,14 @@ def collect_dataset(cfg, data_dir, skipped, excluded):
                 skipped.append(f"{name}: no gold canal segmentation for {mask}")
                 continue
             try:
-                # Some datasets have canal masks with a different affine from the image (canal_ignore_affine)
-                problem = check_label(image, canal, 1, "canal", not cfg.get("canal_ignore_affine", False))
+                problem = check_label(image, canal, 1, "canal")
             except Exception as e:   # corrupted or partially downloaded canal mask
                 skipped.append(f"{name}: could not read {canal} ({e})")
                 continue
             if problem:
                 skipped.append(f"{name}: {problem}: {canal}")
                 continue
-            extra = {"canal_seg": str(canal), "split": EXTERNAL_SPLIT,
-                     "canal_ignore_affine": cfg.get("canal_ignore_affine", False)}
+            extra = {"canal_seg": str(canal), "split": EXTERNAL_SPLIT}
         elif canal_label_index:
             # No SC label: the mask is only used as gold canal segmentation
             extra = {"canal_seg": str(mask), "canal_label_value": canal_label_index}
@@ -245,8 +242,6 @@ def collect_dataset(cfg, data_dir, skipped, excluded):
             "region": cfg.get("region"),
             # Value of the SC in the label: 1 for binary masks, the SC index for multi-class masks
             "sc_label_value": None if canal_label_index else sc_label_value,
-            # True if the SC mask has a different affine from the image (it is then on the image grid)
-            "sc_ignore_affine": cfg.get("sc_ignore_affine", False),
             **metadata,
             **extra,
         })

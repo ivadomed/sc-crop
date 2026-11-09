@@ -43,8 +43,6 @@ def get_parser():
     parser.add_argument("--sc-label-value", type=int, default=1, help="Value of the SC in the SC segmentation.")
     parser.add_argument("--canal-label-value", type=int, default=None,
                         help="Value of the canal in the canal segmentation (default: all non-zero voxels).")
-    parser.add_argument("--ignore-affine", action="store_true",
-                        help="Use the image affine for the masks (like sc_ignore_affine and canal_ignore_affine).")
     parser.add_argument("--output-dir", required=True, type=Path, help="Folder where the slices and plots are saved.")
     parser.add_argument("--rgb", action="store_true", help="Pseudo-RGB slices (like build_yolo_dataset.py --rgb).")
     return parser
@@ -109,8 +107,7 @@ def main():
     # Same entry as in the MSD json, processed by build_yolo_dataset.py
     entry = {"image": str(args.image), "dataset": "debug", "split": "debug",
              "sc_seg": str(args.sc_seg) if args.sc_seg else None, "sc_label_value": args.sc_label_value,
-             "canal_seg": str(args.canal_seg), "canal_label_value": args.canal_label_value, "canal_silver": None,
-             "sc_ignore_affine": args.ignore_affine, "canal_ignore_affine": args.ignore_affine}
+             "canal_seg": str(args.canal_seg), "canal_label_value": args.canal_label_value, "canal_silver": None}
     warnings, sc_outside = [], []
     n_slices = process_entry(entry, output_dir, args.rgb, warnings, sc_outside)
 
