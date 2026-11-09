@@ -36,11 +36,18 @@ def get_parser():
     return parser
 
 
-def preprocess(image, rgb=False):
-    """Return the axial slices of a nifti image (from superior to inferior): list of (rows, columns, 3) uint8
-    arrays in BGR order, as YOLO reads the pngs of build_yolo_dataset.py."""
+def resample_image(image):
+    """Return the nifti image averaged over time (4D), reoriented to LAS, resampled to VOXEL_SIZE and normalized
+    to uint8 (steps 1 to 4), as a nibabel image (its affine gives the position of the slices in the image)."""
     img = reorient_to_las(to_3d(nib.load(image)))
-    data = normalize(resample_from_to(img, target_grid(img, VOXEL_SIZE), order=1).get_fdata(dtype=np.float32))
+    shape, affine = target_grid(img, VOXEL_SIZE)
+    data = normalize(resample_from_to(img, (shape, affine), order=1).get_fdata(dtype=np.float32))
+    return nib.Nifti1Image(data, affine)
+
+
+def cut_slices(data, rgb=False):
+    """Return the axial slices of LAS data (step 5), from superior to inferior: list of (rows, columns, 3) uint8
+    arrays in BGR order, as YOLO reads the pngs of build_yolo_dataset.py."""
     # (slice, row, column): slice 0 = most superior, row 0 = Anterior, column 0 = patient Right
     axial = data.transpose(2, 1, 0)[::-1, ::-1, :]
     if rgb:
@@ -50,6 +57,11 @@ def preprocess(image, rgb=False):
     else:
         slices = np.repeat(axial[..., None], 3, axis=-1)
     return list(slices)
+
+
+def preprocess(image, rgb=False):
+    """Return the axial slices of a nifti image (steps 1 to 5), see cut_slices."""
+    return cut_slices(np.asarray(resample_image(image).dataobj), rgb)
 
 
 def main():
