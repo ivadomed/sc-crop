@@ -67,7 +67,6 @@ datasets:
     region:      cervical
     external_test: true
     canal_suffix:  _label-canal_seg.nii.gz
-    canal_ignore_affine: true   # canal masks have a different affine from the images
 
   - name: dcm-zurich-lesions-20231115
     host: neuro
