@@ -132,8 +132,9 @@ def use_extra_augmentations():
     Must be called before the training, so that the data loading workers inherit it."""
     init = Albumentations.__init__
 
-    def patched_init(self, p=1.0, transforms=None):
-        init(self, p=p, transforms=get_extra_augmentations() if transforms is None else transforms)
+    def patched_init(self, *args, transforms=None, **kwargs):
+        # Other arguments (p, flip_idx, ...) are passed to YOLO unchanged
+        init(self, *args, transforms=get_extra_augmentations() if transforms is None else transforms, **kwargs)
 
     Albumentations.__init__ = patched_init
 

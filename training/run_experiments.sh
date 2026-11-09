@@ -42,7 +42,7 @@ DATASETS=("$GRAY_DATASET" "$GRAY_DATASET" "$RGB_DATASET" "$RGB_DATASET")
 EXTRA_AUGMENT=(no yes no yes)
 # Model sizes, trained one after the other on each GPU (smallest first)
 MODELS=(yolo26n yolo26s yolo26m yolo26l yolo26x)
-EPOCHS=100
+EPOCHS=200
 STATUS="$OUTPUT_DIR/${DATE}_status.txt"
 
 PIDS=()
