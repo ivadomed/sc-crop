@@ -25,9 +25,6 @@
 #                  split). Only images with both an SC segmentation and a gold canal segmentation are used.
 #                  Default: false.
 #   canal_suffix : gold canal mask filename suffix, next to the SC mask (required if external_test).
-#   canal_ignore_affine : true to accept gold canal masks whose affine differs from the image (same shape
-#                  required). The canal is then considered to be on the image grid. Default: false.
-#   sc_ignore_affine : same for the SC masks. Default: false.
 #   pathology    : pathology of the subjects missing from participants.tsv (e.g. no pathology column).
 #                  Default: unknown.
 #   canal_label_index : for datasets without SC segmentation (e.g. CT, where the SC is not visible): value
@@ -90,7 +87,6 @@ datasets:
     region:      cervical
     external_test: true
     canal_suffix:  _label-canal_seg.nii.gz
-    canal_ignore_affine: true   # canal masks have a different affine from the images
 
   - name: fullbody-totalsegmentator-ct
     host: neuro
@@ -205,7 +201,6 @@ datasets:
     url_ssh:   git@data.neuro.polymtl.ca:datasets/spider-challenge-2023
     mask_suffix:  _label-SC_seg.nii.gz
     region:       lumbar
-    sc_ignore_affine: true   # SC masks have a different affine from the images
     external_test: true
     canal_suffix:  _label-canal_seg.nii.gz
 
