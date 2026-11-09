@@ -8,6 +8,8 @@ Outputs (in OUTPUT_FOLDER):
     images/debug/, labels/debug/ : the png slices and YOLO label files, as written by build_yolo_dataset.py
     boxes/slice_NNN.png          : each slice with its SC (green) and canal (red) boxes
     overview.png                 : all slices in one figure
+    sagittal.png                 : sagittal view at the center (RL) of the canal, with the AP extent of the SC
+                                   (green) and canal (red) boxes of each slice
     debug.log                    : masks with several connected components, SC outside the canal
 
 Usage:
@@ -23,7 +25,7 @@ import matplotlib
 matplotlib.use("Agg")   # no display needed (servers)
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Patch, Rectangle
 from PIL import Image
 
 from build_yolo_dataset import process_entry
@@ -71,6 +73,33 @@ def plot_slice(ax, png_path, label_path):
     ax.axis("off")
 
 
+def plot_sagittal(pngs, labels, title, path):
+    """Save the sagittal view at the center (RL) of the canal boxes, with the AP extent of the box of each class
+    on each slice. Rows = slices (superior at the top, 10 mm), columns = AP (anterior on the left, 1 mm)."""
+    # Axial slices stacked from superior to inferior; pseudo-RGB pngs: G = current slice
+    axial = [np.array(Image.open(png)) for png in pngs]
+    axial = np.stack([a[:, :, 1] if a.ndim == 3 else a for a in axial])   # (slice, AP, RL)
+    boxes = [read_boxes(label, axial.shape[2], axial.shape[1]) for label in labels]
+    # RL position: median center of the canal boxes, else of all boxes, else the middle of the image
+    centers = ([(b[0] + b[2]) / 2 for slice_boxes in boxes for cls, b in slice_boxes if cls == 1]
+               or [(b[0] + b[2]) / 2 for slice_boxes in boxes for _, b in slice_boxes] or [axial.shape[2] / 2])
+    x = min(int(np.median(centers)), axial.shape[2] - 1)
+
+    fig, ax = plt.subplots(figsize=(6, 8))
+    # extent: slice z covers [z, z + 1], AP pixel i covers [i, i + 1], like the box coordinates
+    ax.imshow(axial[:, :, x], cmap="gray", extent=(0, axial.shape[1], axial.shape[0], 0), aspect=10)
+    for z, slice_boxes in enumerate(boxes):
+        for cls, b in slice_boxes:
+            ax.add_patch(Rectangle((b[1], z), b[3] - b[1], 1, fill=False, color=COLORS.get(cls, "yellow"), linewidth=1))
+    ax.legend(handles=[Patch(fill=False, edgecolor=COLORS[c], label=NAMES[c]) for c in COLORS],
+              loc="lower right", fontsize=8)
+    ax.set_title(f"{title}\nsagittal at RL = {x} mm, superior at the top, anterior on the left", fontsize=8)
+    ax.axis("off")
+    fig.tight_layout()
+    fig.savefig(path, dpi=100)
+    plt.close(fig)
+
+
 def main():
     args = get_parser().parse_args()
     output_dir = args.output_dir.resolve()
@@ -111,6 +140,8 @@ def main():
     fig.savefig(output_dir / "overview.png", dpi=100)
     plt.close(fig)
 
+    plot_sagittal(pngs, labels, args.image.name, output_dir / "sagittal.png")
+
     def n_with(cls):
         """Number of slices with a box of class `cls`."""
         return sum(any(line.split()[:1] == [str(cls)] for line in label.read_text().splitlines()) for label in labels)
@@ -119,7 +150,7 @@ def main():
            f"Slices: {n_slices}, with SC box: {n_with(0)}, with canal box: {n_with(1)}\n"
            f"SC outside the canal: {sc_outside or 'no'}\nWarnings: {warnings or 'none'}\n")
     (output_dir / "debug.log").write_text(log)
-    print(log + f"Saved in {output_dir} (overview.png, boxes/)")
+    print(log + f"Saved in {output_dir} (overview.png, sagittal.png, boxes/)")
 
 
 if __name__ == "__main__":
