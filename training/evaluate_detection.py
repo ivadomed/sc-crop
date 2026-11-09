@@ -147,22 +147,27 @@ def evaluate_slices(images_dir, labels_dir, preds, thresholds):
             pred, conf = preds.get(image.stem, {}).get(cls, (None, None))
             if conf is not None and conf < threshold:
                 pred, conf = None, None
-            record = {"name": image.stem, "image": str(image), "volume": volume, "dataset": volume.split("__")[0],
-                      "contrast": volume.split("_")[-1], "slice": int(slice_index), "gt_box": gt, "pred_box": pred,
-                      "conf": conf, "iou": None, "center_error_mm": None, "gt_coverage": None}
-            if gt and pred:
-                inter = intersection(gt, pred)
-                record.update(outcome="TP", iou=inter / (area(gt) + area(pred) - inter), gt_coverage=inter / area(gt),
-                              center_error_mm=float(np.hypot((gt[0] + gt[2] - pred[0] - pred[2]) / 2,
-                                                             (gt[1] + gt[3] - pred[1] - pred[3]) / 2)))
-            elif gt:
-                record.update(outcome="FN", iou=0.0)
-            elif pred:
-                record.update(outcome="FP", iou=0.0)
-            else:
-                record.update(outcome="TN")
-            records[cls].append(record)
+            records[cls].append({"name": image.stem, "image": str(image), "volume": volume,
+                                 "dataset": volume.split("__")[0], "contrast": volume.split("_")[-1],
+                                 "slice": int(slice_index), "gt_box": gt, "pred_box": pred, "conf": conf,
+                                 **compare_boxes(gt, pred)})
     return records
+
+
+def compare_boxes(gt, pred):
+    """Return the outcome, IoU, center error and GT coverage of a slice from its GT and predicted boxes of one
+    class (None: no box)."""
+    result = {"outcome": "TN", "iou": None, "center_error_mm": None, "gt_coverage": None}
+    if gt and pred:
+        inter = intersection(gt, pred)
+        result.update(outcome="TP", iou=inter / (area(gt) + area(pred) - inter), gt_coverage=inter / area(gt),
+                      center_error_mm=float(np.hypot((gt[0] + gt[2] - pred[0] - pred[2]) / 2,
+                                                     (gt[1] + gt[3] - pred[1] - pred[3]) / 2)))
+    elif gt:
+        result.update(outcome="FN", iou=0.0)
+    elif pred:
+        result.update(outcome="FP", iou=0.0)
+    return result
 
 
 def box_3d(slice_boxes):
