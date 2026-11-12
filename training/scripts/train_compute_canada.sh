@@ -64,5 +64,5 @@ source "$VENV/bin/activate"
 # YOLO finds yolo26x.pt and yolo26n.pt (mixed precision check) in the current folder: no download needed.
 # The CPUs of the job are shared between the 4 trainings (data loading workers).
 cd "$WEIGHTS_DIR"
-bash "$REPO/training/run_experiments_x.sh" "$GRAY_DATASET" "$RGB_DATASET" "$OUTPUT_DIR" \
+bash "$REPO/training/scripts/run_experiments_x.sh" "$GRAY_DATASET" "$RGB_DATASET" "$OUTPUT_DIR" \
     --epochs "$EPOCHS" --workers $((SLURM_CPUS_PER_TASK / 4))

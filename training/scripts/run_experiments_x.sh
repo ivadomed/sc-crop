@@ -31,7 +31,7 @@ OUTPUT_DIR="$3"
 shift 3
 EXTRA_ARGS=("$@")   # passed to every training (e.g. --epochs 100)
 
-TRAIN_SCRIPT="$(dirname "$0")/train_detection.py"
+TRAIN_SCRIPT="$(dirname "$0")/../train_detection.py"
 DATE=$(date +%Y%m%d_%H%M%S)
 mkdir -p "$OUTPUT_DIR"
 
