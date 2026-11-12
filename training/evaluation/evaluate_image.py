@@ -35,7 +35,7 @@ from matplotlib.patches import Rectangle
 from ultralytics import YOLO
 
 # Inference scripts (preprocessing, prediction) and dataset building (processing of the masks)
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "inference"))
 sys.path.insert(0, str(ROOT / "training" / "data"))
 from build_yolo_dataset import prepare_mask

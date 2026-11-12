@@ -30,6 +30,7 @@ Author: Pierre-Louis Benveniste
 """
 import argparse
 import logging
+import sys
 from pathlib import Path
 
 import albumentations as A
@@ -40,6 +41,7 @@ from ultralytics import YOLO
 from ultralytics.data.augment import Albumentations
 from ultralytics.utils import LOGGER
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "evaluation"))
 from evaluate_detection import evaluate, plot_training_curves, read_dataset, select_thresholds
 
 
