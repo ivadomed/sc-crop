@@ -411,10 +411,13 @@ def read_dataset(dataset_yaml, split):
     return root / "images" / split, root / "labels" / split, {int(c): name for c, name in cfg["names"].items()}
 
 
-def select_thresholds(model, dataset_yaml, output_dir, imgsz=320, device="0"):
+def select_thresholds(model, dataset_yaml, output_dir, imgsz=320, device="0", class_ids=None):
     """Choose the confidence threshold of each class on the validation set: the one with the best slice-level
-    F1 among THRESHOLDS. Save thresholds.json and thresholds.png in `output_dir`. Return {class: threshold}."""
+    F1 among THRESHOLDS. Save thresholds.json and thresholds.png in `output_dir`. Return {class: threshold}.
+    `class_ids`: only these classes of the dataset (e.g. [0] for a model detecting only the SC); default: all."""
     images_dir, labels_dir, classes = read_dataset(dataset_yaml, "validation")
+    if class_ids is not None:
+        classes = {cls: classes[cls] for cls in class_ids}
     images = sorted(images_dir.glob("*.png"))
     LOGGER.info(f"Choosing the thresholds on the validation set: {len(images)} slices")
     preds = predict(model, images_dir, imgsz, device)
@@ -460,15 +463,16 @@ def read_thresholds(path, dataset_yaml):
 
 def evaluate(model, dataset_yaml, split, output_dir, thresholds, imgsz=320, device="0", n_worst=100):
     """Predict and evaluate one split of the YOLO dataset, for each class with its confidence threshold
-    (`thresholds`: {class: threshold}). Return {class name: metrics}."""
+    (`thresholds`: {class: threshold}; classes without threshold are not evaluated). Return {class name: metrics}."""
     images_dir, labels_dir, classes = read_dataset(dataset_yaml, split)
     images = sorted(images_dir.glob("*.png"))
-    LOGGER.info(f"Evaluating {split}: {len(images)} slices, classes {list(classes.values())}")
+    LOGGER.info(f"Evaluating {split}: {len(images)} slices, classes {[classes[cls] for cls in thresholds]}")
     preds = predict(model, images_dir, imgsz, device)
     records = evaluate_slices(images_dir, labels_dir, preds, thresholds)
 
     metrics = {}
-    for cls, name in classes.items():
+    for cls in thresholds:
+        name = classes[cls]
         metrics[name] = save_results(records[cls], split, name, thresholds[cls], output_dir / split / name, n_worst)
         m = metrics[name]["overall"]
         LOGGER.info(f"{split}, {name} (threshold {thresholds[cls]:.2f}): sensitivity {m['sensitivity']}, "
