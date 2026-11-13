@@ -11,7 +11,7 @@
 #   GPU 3 : RGB dataset,       with extra augmentations (--extra-augment)
 #
 # Each training is saved in OUTPUT_DIR/<YYYYMMDD_HHMMSS>_<configuration>_<model>/ (same layout as
-# run_experiments.sh, so evaluate_external_test.py and compare_inference_speed.py work on OUTPUT_DIR), with the
+# run_experiments.sh, so compare_inference_speed.py works on OUTPUT_DIR), with the
 # terminal output of the training in stdout.log. A failed training does not stop the others. The end of each
 # training (done or FAILED) is written in OUTPUT_DIR/<YYYYMMDD_HHMMSS>_status.txt.
 # The output and errors of the job are in the files of the --output and --error SBATCH options.
@@ -33,7 +33,7 @@
 #   3. Edit the paths below and the SBATCH options (account, time, CPUs, memory).
 #
 # Usage:
-#   sbatch train_compute_canada_all.sh
+#   sbatch train_compute_canada.sh
 #   (only some model sizes: edit MODELS below)
 #
 # Author: Pierre-Louis Benveniste

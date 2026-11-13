@@ -2,7 +2,7 @@
 #
 # Launch the trainings (train_detection.py) of all experiments: 4 configurations x 5 model sizes = 20 trainings.
 # Each GPU (0 to 3) has one configuration and trains its 5 model sizes one after the other
-# (yolo26n, s, m, l, x), for 100 epochs each, while the 4 GPUs run at the same time:
+# (yolo26n, s, m, l, x), for 200 epochs each (EPOCHS below), while the 4 GPUs run at the same time:
 #
 #   GPU 0 : grayscale dataset, without extra augmentations
 #   GPU 1 : grayscale dataset, with extra augmentations (--extra-augment)
