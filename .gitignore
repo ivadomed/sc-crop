@@ -7,3 +7,4 @@ build/
 *.onnx
 sc_crop/models/*.zip
 bench_preprocessing.py
+.claude/
