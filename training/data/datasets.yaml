@@ -96,14 +96,6 @@ datasets:
     region:       mixed
     canal_label_index: 83   # no SC segmentation (SC not visible on CT), only the canal
 
-  # - name: fullbody-totalsegmentator-mri
-  #   host: neuro
-  #   url_https: https://data.neuro.polymtl.ca/datasets/fullbody-totalsegmentator-mri
-  #   url_ssh:   git@data.neuro.polymtl.ca:datasets/fullbody-totalsegmentator-mri
-  #   mask_suffix:  _label-body_dseg.nii.gz
-  #   region:       mixed
-  #   canal_label_index: 46 # no gold SC segmentation
-
   - name: hc-lumbar-zurich
     host: neuro
     url_https: https://data.neuro.polymtl.ca/datasets/hc-lumbar-zurich
