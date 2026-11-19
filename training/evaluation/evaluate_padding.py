@@ -13,7 +13,7 @@ Metrics, for each padding (missed volumes and slices count as 0):
         % of volumes with 3D GT coverage >= 0.95 and = 1 (whole GT box in the crop),
         crop / GT volume ratio (size of the crop compared to the GT box)
     Slice level, on slices with the structure and a predicted box (RL/AP padding only):
-        GT coverage, % of slices with GT coverage = 1
+        GT coverage, % of slices with GT coverage >= 0.95 and = 1
 
 Output:
     OUTPUT_CSV : one row per run, split, class, padding and dataset ("overall", then each dataset)
@@ -88,6 +88,7 @@ def padding_metrics(records, volumes, n_slices, padding):
             "gt_coverage_3d_above_0.95": fraction(coverages, 0.95), "gt_coverage_3d_full": fraction(coverages, 1.0),
             "median_si_coverage": median(si_coverages), "median_crop_to_gt_ratio": median(ratios),
             "n_detected_slices": len(slice_coverages), "median_slice_gt_coverage": median(slice_coverages),
+            "slice_gt_coverage_above_0.95": fraction(slice_coverages, 0.95),
             "slice_gt_coverage_full": fraction(slice_coverages, 1.0)}
 
 
@@ -120,7 +121,9 @@ def main():
                         if dataset == "overall":
                             print(f"{run:<30} {split:<13} {name:<12} padding {padding_name:<9} "
                                   f"3D GT coverage: median {metrics['median_gt_coverage_3d']}, "
-                                  f"full {metrics['gt_coverage_3d_full']}; median 3D IoU {metrics['median_iou_3d']}, "
+                                  f">= 0.95 {metrics['gt_coverage_3d_above_0.95']}, full {metrics['gt_coverage_3d_full']}; "
+                                  f"slice GT coverage >= 0.95 {metrics['slice_gt_coverage_above_0.95']}; "
+                                  f"median 3D IoU {metrics['median_iou_3d']}, "
                                   f"crop / GT volume {metrics['median_crop_to_gt_ratio']}")
 
     if not rows:
