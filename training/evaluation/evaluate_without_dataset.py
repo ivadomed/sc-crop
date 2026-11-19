@@ -11,10 +11,6 @@ Output:
     OUTPUT_CSV : one row per run, split, class and subset ("all" or "without <datasets>"): threshold and main
                  metrics (see evaluate_detection.py)
 
-Usage:
-    python evaluate_without_dataset.py --eval-dirs <experiments_dir>/*/evaluation --output <output.csv> \
-        [--exclude spider-challenge-2023] [--splits external_test test]
-
 Author: Pierre-Louis Benveniste
 """
 import argparse
