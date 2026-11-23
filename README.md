@@ -12,11 +12,26 @@ conda activate sc_crop
 pip install -r requirements.txt
 ```
 
+## Download the model
+
+Download the model weights (`model_detect_canal_sc.pt`) from the [r20261113 release](https://github.com/ivadomed/sc-crop/releases/tag/r20261113):
+
+```bash
+wget https://github.com/ivadomed/sc-crop/releases/download/r20261113/model_detect_canal_sc.pt
+```
+
 ## Crop an image
 
 ```bash
-python sc_crop.py --image t2.nii.gz --model best.pt
+python sc_crop.py --image t2.nii.gz --model model_detect_canal_sc.pt --structure canal --conf 0.26 0.29 --margin 10 10 30
 ```
+
+Recommended settings for this model:
+
+- **Confidence thresholds** (`--conf`, one value per class, in the order SC canal): `0.26` for the spinal cord and `0.29` for the spinal canal.
+- **Padding** (`--margin`, in mm, in the order RL AP SI): `10 10 30`. Without padding, the crop might miss a tiny bit of the whole ground-truth. With `10 10 30`, it contains it in about 99% of volumes (see [#38](https://github.com/ivadomed/sc-crop/issues/38)).
+
+Use `--structure sc` to crop around the spinal cord instead of the spinal canal.
 
 | File | Content |
 |---|---|
