@@ -4,7 +4,7 @@ test set (MSD json), selected at random.
 
 For each model (checkpoints/weights/best.pt of each training folder <date>_<configuration>_<model>/):
     1. load the model on the device
-    2. for each volume: preprocess the image and predict all its slices in one batch
+    2. for each volume: preprocess the image (1 mm iso, the inference default) and predict all its slices
 Each step is timed. Models and volumes are processed one after the other, on the GPU if there is one else on the CPU
 (--cpu: always on the CPU)
 

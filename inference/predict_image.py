@@ -1,8 +1,9 @@
 """
 Detect the spinal cord (SC, class 0) and the spinal canal (class 1) on one nifti image with a trained YOLO model.
 
-The image is preprocessed into axial slices (preprocess_image.py), then all the slices are predicted in one
-batch. On each slice, the most confident box of each class is kept, if its confidence is >= the threshold of the
+The image is preprocessed into axial slices (preprocess_image.py): 1 x 1 x 1 mm by default, 1 x 1 x SI_RES mm
+with --si-res (the training slices are 1 x 1 x 10 mm). Then the slices are predicted in batches of BATCH_SIZE
+slices. On each slice, the most confident box of each class is kept, if its confidence is >= the threshold of the
 class (--conf): one value for all classes (e.g. --conf 0.25), or one value per class, in the order of the
 classes: SC then canal (e.g. --conf 0.3 0.5, such as the thresholds chosen on the validation set at the end of
 the training, in <run_dir>/evaluation/thresholds.json).
@@ -10,8 +11,9 @@ the training, in <run_dir>/evaluation/thresholds.json).
 The prediction runs on the GPU if there is one, else on the CPU.
 
 Outputs:
-    OUTPUT_CSV : one row per kept box: slice (0 = most superior), class, class name, confidence and box
-                 (x1, y1, x2, y2) in pixels of the slice (1 x 1 mm, row 0 = Anterior, column 0 = patient Right)
+    OUTPUT_CSV : one row per kept box: slice (0 = most superior, SI_RES mm thick), class, class name, confidence
+                 and box (x1, y1, x2, y2) in pixels of the slice (1 x 1 mm, row 0 = Anterior, column 0 = patient
+                 Right)
 
 Author: Pierre-Louis Benveniste
 """
@@ -21,9 +23,12 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
-from preprocess_image import preprocess
+from preprocess_image import SI_RES, add_si_res_argument, preprocess
 
 IMAGE_SIZE = 320  # size of the slices used for training and prediction (pixels)
+# Number of slices predicted at once (at 1 mm iso, a whole spine image has several hundred slices: predicting
+# them all in one batch could run out of GPU memory)
+BATCH_SIZE = 64
 
 
 def get_parser():
@@ -36,6 +41,7 @@ def get_parser():
     parser.add_argument("--conf", type=float, nargs="+", default=[0.25],
                         help="Confidence threshold: one value for all classes, or one value per class "
                              "(SC canal, e.g. --conf 0.3 0.5).")
+    add_si_res_argument(parser)
     return parser
 
 
@@ -49,29 +55,31 @@ def get_thresholds(conf, names):
     return dict(zip(sorted(names), conf))
 
 
-def predict_slices(model, slices, thresholds, imgsz=IMAGE_SIZE, device=None):
-    """Predict all the slices in one batch. Return, for each slice, {class: ((x1, y1, x2, y2), confidence)}
-    with the most confident box of each class whose confidence is >= the threshold of the class"""
-    results = model.predict(source=slices, imgsz=imgsz, device=device, conf=min(thresholds.values()),
-                            batch=len(slices), verbose=False)
+def predict_slices(model, slices, thresholds, imgsz=IMAGE_SIZE, device=None, batch_size=BATCH_SIZE):
+    """Predict the slices in batches of `batch_size` slices. Return, for each slice, {class: ((x1, y1, x2, y2),
+    confidence)} with the most confident box of each class whose confidence is >= the threshold of the class"""
     preds = []
-    for r in results:
-        best = {}
-        for box, conf, cls in zip(r.boxes.xyxy.tolist(), r.boxes.conf.tolist(), r.boxes.cls.tolist()):
-            cls = int(cls)
-            if conf >= thresholds[cls] and (cls not in best or conf > best[cls][1]):
-                best[cls] = (tuple(box), conf)
-        preds.append(best)
+    for start in range(0, len(slices), batch_size):
+        batch = slices[start:start + batch_size]
+        results = model.predict(source=batch, imgsz=imgsz, device=device, conf=min(thresholds.values()),
+                                batch=len(batch), verbose=False)
+        for r in results:
+            best = {}
+            for box, conf, cls in zip(r.boxes.xyxy.tolist(), r.boxes.conf.tolist(), r.boxes.cls.tolist()):
+                cls = int(cls)
+                if conf >= thresholds[cls] and (cls not in best or conf > best[cls][1]):
+                    best[cls] = (tuple(box), conf)
+            preds.append(best)
     return preds
 
 
-def predict_image(image, model, output, rgb=False, conf=(0.25,)):
-    """Detect the SC and the canal on a nifti image with the YOLO weights `model`
-    and save the kept boxes in the csv file `output`"""
+def predict_image(image, model, output, rgb=False, conf=(0.25,), si_res=SI_RES):
+    """Detect the SC and the canal on a nifti image (resampled to 1 x 1 x `si_res` mm) with the YOLO weights
+    `model` and save the kept boxes in the csv file `output`"""
     model = YOLO(model)
     thresholds = get_thresholds(conf, model.names)
     print("Thresholds: " + ", ".join(f"{model.names[cls]} {t}" for cls, t in thresholds.items()))
-    preds = predict_slices(model, preprocess(image, rgb), thresholds)
+    preds = predict_slices(model, preprocess(image, rgb, si_res), thresholds)
 
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -88,7 +96,7 @@ def predict_image(image, model, output, rgb=False, conf=(0.25,)):
 
 def main():
     args = get_parser().parse_args()
-    predict_image(args.image, args.model, args.output, args.rgb, args.conf)
+    predict_image(args.image, args.model, args.output, args.rgb, args.conf, args.si_res)
 
 
 if __name__ == "__main__":
