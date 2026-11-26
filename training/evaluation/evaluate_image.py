@@ -38,7 +38,7 @@ from ultralytics import YOLO
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "inference"))
 sys.path.insert(0, str(ROOT / "training" / "data"))
-from build_yolo_dataset import prepare_mask
+from build_yolo_dataset import VOXEL_SIZE, prepare_mask
 from evaluate_detection import compare_boxes, compute_metrics, evaluate_volumes
 from predict_image import get_thresholds, predict_slices
 from preprocess_image import cut_slices, resample_image
@@ -136,7 +136,9 @@ def main():
     (args.output_dir / "axial").mkdir(parents=True, exist_ok=True)
 
     # 1. Prediction
-    slices = cut_slices(np.asarray(resample_image(args.image).dataobj), args.rgb)
+    # Same SI voxel size as the GT boxes (prepare_mask: 1 x 1 x 10 mm, like the YOLO dataset), not the 1 mm of
+    # the inference default
+    slices = cut_slices(np.asarray(resample_image(args.image, VOXEL_SIZE[2]).dataobj), args.rgb)
     model = YOLO(args.model)
     names = model.names
     thresholds = get_thresholds(args.conf, names)

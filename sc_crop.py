@@ -1,8 +1,8 @@
 """
 Crop a nifti image around the spinal canal (default) or the spinal cord (SC) detected by a trained YOLO model.
 
-    1. Preprocess the image into axial slices (inference/preprocess_image.py) and detect the structure on each
-       slice (inference/predict_image.py)
+    1. Preprocess the image into axial slices (inference/preprocess_image.py), 1 x 1 x 1 mm by default or
+       1 x 1 x SI_RES mm with --si-res, and detect the structure on each slice (inference/predict_image.py)
     2. 3D box = smallest box containing the boxes of all the slices where the structure is detected
     3. Bring the box back to the voxels of the original image and crop the image
 
@@ -26,7 +26,7 @@ from ultralytics import YOLO
 # Inference scripts (preprocessing of an image, prediction of its slices)
 sys.path.insert(0, str(Path(__file__).resolve().parent / "inference"))
 from predict_image import get_thresholds, predict_slices
-from preprocess_image import VOXEL_SIZE, cut_slices, resample_image
+from preprocess_image import SI_RES, add_si_res_argument, image_slices, resample_image
 
 # Class of each structure in the YOLO model
 STRUCTURES = {"sc": 0, "canal": 1}
@@ -44,7 +44,8 @@ def get_parser():
                              "(SC canal, e.g. --conf 0.3 0.5).")
     parser.add_argument("--margin", type=float, nargs="+", default=[0],
                         help="Margin added on both sides of the box (mm): one value for all axes, or one value per "
-                             "axis (RL AP SI, e.g. --margin 5 5 20).")
+                             "axis (RL AP SI, e.g. --margin 5 5 20). In mm whatever the resampling (--si-res).")
+    add_si_res_argument(parser)
     parser.add_argument("--output-dir", type=Path, default=None, help="Output folder (default: folder of the image).")
     return parser
 
@@ -57,10 +58,10 @@ def get_margins(margin):
     return np.broadcast_to(margin, 3)
 
 
-def find_box(preds, cls, shape, margin):
+def find_box(preds, cls, shape, voxel_size, margin):
     """Return the (lower, upper) corners of the 3D box around the boxes of class `cls` of all the slices, plus
-    `margin` (mm, see get_margins), in voxel coordinates of the resampled LAS image of shape `shape` (voxel
-    centers at integers). Return None if the class is not detected on any slice."""
+    `margin` (mm, see get_margins), in voxel coordinates of the resampled LAS image of shape `shape` and voxel
+    size `voxel_size` (mm, voxel centers at integers). Return None if the class is not detected on any slice."""
     detected = [(i, p[cls][0]) for i, p in enumerate(preds) if cls in p]
     if not detected:
         return None
@@ -74,7 +75,7 @@ def find_box(preds, cls, shape, margin):
     # pixel edges at integers): box edges in voxel coordinates
     lower = np.array([x1 - 0.5, n_y - y2 - 0.5, n_z - 1 - last - 0.5])
     upper = np.array([x2 - 0.5, n_y - y1 - 0.5, n_z - 1 - first + 0.5])
-    margin_voxels = get_margins(margin) / np.array(VOXEL_SIZE)
+    margin_voxels = get_margins(margin) / np.asarray(voxel_size, dtype=float)
     return lower - margin_voxels, upper + margin_voxels
 
 
@@ -91,9 +92,10 @@ def to_image_voxels(lower, upper, resampled_affine, image):
     return tuple(slice(a, b) for a, b in zip(start, stop))
 
 
-def sc_crop(image, model, output_dir=None, structure="canal", rgb=False, conf=(0.25,), margin=0):
-    """Crop `image` around the `structure` ("canal" or "sc") detected by the YOLO weights `model`, and save the
-    cropped image and the mask of the box used. Return (cropped image path, mask path)."""
+def sc_crop(image, model, output_dir=None, structure="canal", rgb=False, conf=(0.25,), margin=0, si_res=SI_RES):
+    """Crop `image` around the `structure` ("canal" or "sc") detected by the YOLO weights `model` (on slices
+    resampled to 1 x 1 x `si_res` mm), and save the cropped image and the mask of the box used. `margin` is in mm
+    whatever `si_res`. Return (cropped image path, mask path)."""
     get_margins(margin)   # check the margin before the prediction
     image = Path(image)
     output_dir = Path(output_dir) if output_dir else image.parent
@@ -101,9 +103,9 @@ def sc_crop(image, model, output_dir=None, structure="canal", rgb=False, conf=(0
     name = image.name.removesuffix(".gz").removesuffix(".nii")
 
     model = YOLO(model)
-    resampled = resample_image(image)
-    preds = predict_slices(model, cut_slices(np.asarray(resampled.dataobj), rgb), get_thresholds(conf, model.names))
-    box = find_box(preds, STRUCTURES[structure], resampled.shape, margin)
+    resampled = resample_image(image, si_res)
+    preds = predict_slices(model, image_slices(resampled, rgb), get_thresholds(conf, model.names))
+    box = find_box(preds, STRUCTURES[structure], resampled.shape, resampled.header.get_zooms()[:3], margin)
     if box is None:
         raise SystemExit(f"No {structure} detected on {image}: nothing cropped")
 
@@ -128,7 +130,7 @@ def sc_crop(image, model, output_dir=None, structure="canal", rgb=False, conf=(0
 
 def main():
     args = get_parser().parse_args()
-    sc_crop(args.image, args.model, args.output_dir, args.structure, args.rgb, args.conf, args.margin)
+    sc_crop(args.image, args.model, args.output_dir, args.structure, args.rgb, args.conf, args.margin, args.si_res)
 
 
 if __name__ == "__main__":
